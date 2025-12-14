@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # --- MICROSERVICE 1: READ PATH ---
+  availability-app:
+    build: ../availability-service
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - OPENSEARCH_URL=http://opensearch:9200
+    depends_on:
+      - redis
+      - opensearch
+
+  # --- MICROSERVICE 2: WRITE PATH (NEW) ---
+  order-app:
+    build: ../order-service
+    ports:
+      - "8001:8001"
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASS=password
+    depends_on:
+      - postgres
+
+  # --- DATABASES ---
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.7.0
+    environment:
+      - discovery.type=single-node
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    # Mount a volume so data persists if you restart
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
