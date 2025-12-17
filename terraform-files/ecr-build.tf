@@ -44,12 +44,7 @@ resource "null_resource" "docker_build_push" {
       docker build -t ${aws_ecr_repository.order_repo.repository_url}:latest .
       docker push ${aws_ecr_repository.order_repo.repository_url}:latest
 
-      # D. Build & Push Inventory Worker
-      cd ../inventory-worker
-      docker build -t ${aws_ecr_repository.inventory_repo.repository_url}:latest .
-      docker push ${aws_ecr_repository.inventory_repo.repository_url}:latest
-
-      # E. Build & Push Fulfillment Worker
+      # D. Build & Push Fulfillment Worker
       cd ../fulfillment-worker
       docker build -t ${aws_ecr_repository.fulfillment_repo.repository_url}:latest .
       docker push ${aws_ecr_repository.fulfillment_repo.repository_url}:latest

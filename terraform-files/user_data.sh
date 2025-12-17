@@ -98,34 +98,8 @@ spec:
     targetPort: 8001
     nodePort: 30002
 
-# --- SERVICE 3: INVENTORY WORKER (The Missing Piece!) ---
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: inventory-worker
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: worker
-  template:
-    metadata:
-      labels:
-        app: worker
-    spec:
-      containers:
-      - name: worker
-        image: ${WORKER_IMAGE_URL}
-        # No ports needed (it's a background process)
-        env:
-        - name: DB_HOST
-          value: "${DB_ENDPOINT}"
-        - name: DB_PASS
-          value: "password123"
-        - name: REDIS_HOST
-          value: "${REDIS_ENDPOINT}"
-# --- SERVICE 4: FULFILLMENT WORKER (SQS Consumer) ---
+
+# --- SERVICE 3: FULFILLMENT WORKER (SQS Consumer) ---
 ---
 apiVersion: apps/v1
 kind: Deployment
