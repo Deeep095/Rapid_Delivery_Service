@@ -158,7 +158,7 @@ app.add_middleware(
 
 # Config
 SQS_QUEUE_URL = os.environ.get('SQS_QUEUE_URL')
-REGION = "us-east-1"
+REGION = os.environ.get("AWS_REGION")
 sqs = boto3.client('sqs', region_name=REGION)
 
 class OrderItem(BaseModel):

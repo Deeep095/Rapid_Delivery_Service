@@ -1,5 +1,5 @@
 import os
-# import json
+import json
 import requests
 import redis
 from fastapi import FastAPI, HTTPException, Query
@@ -15,6 +15,7 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers
 )
+
 # Environment variables (Defaults provided for local testing)
 OPENSEARCH_URL = os.environ.get('OPENSEARCH_URL', 'http://localhost:9200')
 REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
@@ -42,7 +43,7 @@ def check_availability(
         raise HTTPException(status_code=503, detail="Redis unavailable")
 
     # 1. Search OpenSearch for warehouses sorted by distance
-    # We ask for 10, but we will filter them manually
+    # here we just take for size 10, but we will filter them manually
     query = {
         "size": 10, 
         "sort": [

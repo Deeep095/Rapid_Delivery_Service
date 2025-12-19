@@ -1,18 +1,18 @@
 # 1. Create Repositories
 resource "aws_ecr_repository" "availability_repo" {
-  name = "availability-service"
+  name         = "availability-service"
   force_delete = true
 }
 
 resource "aws_ecr_repository" "order_repo" {
-  name = "order-service"
+  name         = "order-service"
   force_delete = true
 }
 
-resource "aws_ecr_repository" "inventory_repo" {
-  name = "inventory-worker"
-  force_delete = true
-}
+# resource "aws_ecr_repository" "inventory_repo" {
+#   name         = "inventory-worker"
+#   force_delete = true
+# }
 
 resource "aws_ecr_repository" "fulfillment_repo" {
   name         = "fulfillment-worker"
@@ -29,11 +29,13 @@ resource "null_resource" "docker_build_push" {
   provisioner "local-exec" {
     # This command runs on Windows Laptop (PowerShell)
     interpreter = ["PowerShell", "-Command"]
-    
+
     command = <<EOT
       # A. Login to AWS ECR
+      # aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.us-east-1.amazonaws.com
       aws ecr get-login-password --region ${var.aws-region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.us-east-1.amazonaws.com
-      
+      # aws ecr get-login-password --region us-east-1 |docker login --username AWS --password-stdin 905418449359.dkr.ecr.us-east-1.amazonaws.com
+
       # B. Build & Push Availability Service
       cd ../availability-service
       docker build -t ${aws_ecr_repository.availability_repo.repository_url}:latest .

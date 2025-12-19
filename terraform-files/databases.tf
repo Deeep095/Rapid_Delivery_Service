@@ -21,13 +21,13 @@ resource "aws_security_group" "rapid_delivery_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
+
   # Allow all internal communication (Microservices <-> DBs)
   ingress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    self        = true
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    self      = true
   }
 
   egress {
@@ -40,15 +40,15 @@ resource "aws_security_group" "rapid_delivery_sg" {
 
 # --- 1. POSTGRES (RDS) ---
 resource "aws_db_instance" "postgres" {
-  identifier           = "rapid-delivery-db"
-  engine               = "postgres"
-  engine_version       = "16.3"
-  instance_class       = "db.t3.micro" # Free Tier Eligible
-  allocated_storage    = 20
-  username             = "postgres"
-  password             = "password123" # Hardcoded for demo simplicity
-  skip_final_snapshot  = true
-  publicly_accessible  = true 
+  identifier             = "rapid-delivery-db"
+  engine                 = "postgres"
+  engine_version         = "16.3"
+  instance_class         = "db.t3.micro" # Free Tier Eligible
+  allocated_storage      = 20
+  username               = "postgres"
+  password               = "password123" # Hardcoded for demo purpose
+  skip_final_snapshot    = true
+  publicly_accessible    = true
   vpc_security_group_ids = [aws_security_group.rapid_delivery_sg.id]
 }
 
@@ -70,7 +70,7 @@ resource "aws_opensearch_domain" "search" {
   engine_version = "OpenSearch_2.11"
 
   cluster_config {
-    instance_type = "t3.small.search" # Free Tier Eligible (for 12 months)
+    instance_type  = "t3.small.search" # Free Tier Eligible 
     instance_count = 1
   }
 
@@ -78,15 +78,15 @@ resource "aws_opensearch_domain" "search" {
     ebs_enabled = true
     volume_size = 10
   }
-  
+
   # Allow access (Simple policy for demo)
   access_policies = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Principal = { AWS = "*" }
-      Action = "es:*"
-      Resource = "arn:aws:es:us-east-1:${data.aws_caller_identity.current.account_id}:domain/rapid-search/*"
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }  //AWS no longer allows wildcard (*) principals for OpenSearch unless you enable fine-grained access control.
+      Action    = "es:*"
+      Resource  = "arn:aws:es:us-east-1:${data.aws_caller_identity.current.account_id}:domain/rapid-search/*"
     }]
   })
 }

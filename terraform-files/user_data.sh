@@ -124,12 +124,11 @@ spec:
         - name: DB_HOST
           value: "${DB_ENDPOINT}"
         - name: AWS_DEFAULT_REGION
-          value: "us-east-1"
+          value: "${AWS_REGION}"
 EOF
 
 # 4. Login to ECR (to allow pulling images)
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
-
+aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 # 5. Apply to Kubernetes
 # We wait 60s to ensure the DBs are fully initialized before the apps try to connect
 sleep 60
