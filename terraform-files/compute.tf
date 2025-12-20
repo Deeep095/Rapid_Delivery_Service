@@ -44,7 +44,7 @@ resource "aws_instance" "app_server" {
   ami           =  data.aws_ami.ubuntu.id #"ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS (US-East-1)
   instance_type = "t3.micro" # Free Tier
   
-  key_name = "vockey" # Use 'vockey' if using Learner Lab, or create a keypair if personal account
+  key_name = "Rapid-Delivery_Service-key" # Use 'vockey' if using Learner Lab, or create a keypair if personal account
 
   vpc_security_group_ids = [aws_security_group.rapid_delivery_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
