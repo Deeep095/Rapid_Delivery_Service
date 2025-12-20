@@ -61,10 +61,6 @@ resource "aws_instance" "app_server" {
   {
     AVAIL_IMAGE_URL     = aws_ecr_repository.availability_repo.repository_url
     ORDER_IMAGE_URL     = aws_ecr_repository.order_repo.repository_url
-    
-
-
-    WORKER_IMAGE_URL    = aws_ecr_repository.inventory_repo.repository_url
 
     FULFILLMENT_IMAGE_URL  = aws_ecr_repository.fulfillment_repo.repository_url
     SQS_QUEUE_URL       = aws_sqs_queue.order_queue.url
@@ -72,10 +68,10 @@ resource "aws_instance" "app_server" {
     REDIS_ENDPOINT      = aws_elasticache_cluster.redis.cache_nodes[0].address
     DB_ENDPOINT         = aws_db_instance.postgres.address
     ACCOUNT_ID          = data.aws_caller_identity.current.account_id
+    AWS_REGION          = var.aws-region 
   })
 
   depends_on = [
-    null_resource.docker_build_push,
     aws_db_instance.postgres,
     aws_elasticache_cluster.redis,
     aws_opensearch_domain.search
