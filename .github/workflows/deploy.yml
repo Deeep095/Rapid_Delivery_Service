@@ -4,55 +4,44 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "availability-service/**"
+      - "order-service/**"
+      - "fulfillment-worker/**"
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ${{ vars.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      # 🔍 DEBUG: confirm folders exist
-      - name: Show workspace structure
-        run: |
-          echo "Repo root:"
-          ls -la
-          echo "Availability service:"
-          ls -la availability-service
-          echo "Order service:"
-          ls -la order-service
-          echo "Fulfillment worker:"
-          ls -la fulfillment-worker
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # -------- Availability Service --------
       - name: Build & Push Availability Service
         run: |
           docker build -t $ECR_REGISTRY/availability-service:latest ./availability-service
           docker push $ECR_REGISTRY/availability-service:latest
 
-      # -------- Order Service --------
       - name: Build & Push Order Service
         run: |
           docker build -t $ECR_REGISTRY/order-service:latest ./order-service
           docker push $ECR_REGISTRY/order-service:latest
 
-      # -------- Fulfillment Worker --------
       - name: Build & Push Fulfillment Worker
         run: |
           docker build -t $ECR_REGISTRY/fulfillment-worker:latest ./fulfillment-worker
