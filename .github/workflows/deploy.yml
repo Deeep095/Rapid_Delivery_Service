@@ -33,21 +33,18 @@ jobs:
 
       # -------- Availability Service --------
       - name: Build & Push Availability Service
-        if: contains(join(github.event.commits.*.modified, ' '), 'availability-service/')
         run: |
           docker build -t $ECR_REGISTRY/availability-service:latest ./availability-service
           docker push $ECR_REGISTRY/availability-service:latest
 
       # -------- Order Service --------
       - name: Build & Push Order Service
-        if: contains(join(github.event.commits.*.modified, ' '), 'order-service/')
         run: |
           docker build -t $ECR_REGISTRY/order-service:latest ./order-service
           docker push $ECR_REGISTRY/order-service:latest
 
       # -------- Fulfillment Worker --------
       - name: Build & Push Fulfillment Worker
-        if: contains(join(github.event.commits.*.modified, ' '), 'fulfillment-worker/')
         run: |
           docker build -t $ECR_REGISTRY/fulfillment-worker:latest ./fulfillment-worker
           docker push $ECR_REGISTRY/fulfillment-worker:latest
