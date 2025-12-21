@@ -1,11 +1,15 @@
 #!/bin/bash
 
-# 1. Install Docker & K3s (Lightweight Kubernetes)
+# 1. Install basic setup and K3s (Lightweight Kubernetes)
 apt-get update
-apt-get install -y docker.io curl unzip
-systemctl enable docker
-systemctl start docker
+apt-get install -y curl unzip
+
 curl -sfL https://get.k3s.io | sh -
+
+sleep 20
+mkdir -p /home/ubuntu/.kube
+cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+chown -R ubuntu:ubuntu /home/ubuntu/.kube
 
 # 2. Install AWS CLI
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -127,9 +131,7 @@ spec:
           value: "${AWS_REGION}"
 EOF
 
-# 4. Login to ECR (to allow pulling images)
-aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
-# 5. Apply to Kubernetes
+# 4. Apply to Kubernetes
 # We wait 60s to ensure the DBs are fully initialized before the apps try to connect
 sleep 60
 sudo k3s kubectl apply -f /home/ubuntu/k8s/deployment.yaml
