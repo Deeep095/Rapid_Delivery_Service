@@ -21,6 +21,14 @@ resource "aws_security_group" "rapid_delivery_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  # Allow Kubernetes NodePort services (30001-30002)
+  ingress {
+    from_port   = 30001
+    to_port     = 30002
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Kubernetes NodePort services"
+  }
 
   # Allow all internal communication (Microservices <-> DBs)
   ingress {

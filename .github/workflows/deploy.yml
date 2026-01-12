@@ -2,8 +2,7 @@ name: Build & Push Services to ECR
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
     paths:
       - "availability-service/**"
       - "order-service/**"
@@ -19,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
@@ -32,16 +31,19 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # -------- Availability Service --------
       - name: Build & Push Availability Service
         run: |
           docker build -t $ECR_REGISTRY/availability-service:latest ./availability-service
           docker push $ECR_REGISTRY/availability-service:latest
 
+      # -------- Order Service --------
       - name: Build & Push Order Service
         run: |
           docker build -t $ECR_REGISTRY/order-service:latest ./order-service
           docker push $ECR_REGISTRY/order-service:latest
 
+      # -------- Fulfillment Worker --------
       - name: Build & Push Fulfillment Worker
         run: |
           docker build -t $ECR_REGISTRY/fulfillment-worker:latest ./fulfillment-worker

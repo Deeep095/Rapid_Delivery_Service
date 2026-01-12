@@ -1,0 +1,58 @@
+name: Kubernetes CI with Minikube
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  k8s-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout code
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    # 2. Install kubectl
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v4
+      with:
+        version: v1.29.0
+
+    # 3. Install Minikube
+    - name: Install Minikube
+      run: |
+        curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+    # 4. Start Minikube
+    - name: Start Minikube
+      run: |
+        minikube start --driver=docker
+
+    # 5. Build Docker images inside Minikube
+    - name: Build images
+      run: |
+        eval $(minikube docker-env)
+
+        docker build -t availability:ci ./availability
+        docker build -t order:ci ./order
+        docker build -t inventory-worker:ci ./inventory-worker
+        docker build -t fulfillment-worker:ci ./fulfillment-worker
+
+    # 6. Deploy to Kubernetes
+    - name: Deploy to Minikube
+      run: |
+        kubectl apply -f k/
+
+    # 7. Wait for pods
+    - name: Wait for pods
+      run: |
+        kubectl rollout status deployment/availability-app
+        kubectl rollout status deployment/order-app
+
+    # 8. Run basic checks
+    - name: Verify pods
+      run: |
+        kubectl get pods -A

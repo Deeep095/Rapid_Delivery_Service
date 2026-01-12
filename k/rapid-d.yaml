@@ -1,0 +1,235 @@
+# ================= CONFIGMAP & SECRETS =================
+# NOTE: This ConfigMap and Secret are automatically created by user_data.sh when the EC2 instance
+# is provisioned via Terraform. The user_data.sh script uses Terraform templatefile() to inject
+# actual endpoint values from Terraform state.
+#
+# This ConfigMap definition is for reference only. In production, it's created dynamically.
+# If you need to manually create it, use: kubectl create configmap app-config --from-literal=...
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  # These values are populated automatically by user_data.sh from Terraform variables
+  # Do NOT hardcode - they come from Terraform templatefile() variables:
+  # ${REDIS_ENDPOINT}, ${DB_ENDPOINT}, ${SQS_QUEUE_URL}, ${OPENSEARCH_ENDPOINT}
+  # This ConfigMap is created dynamically, so these placeholders are for reference only
+  redis-endpoint: "PLACEHOLDER_REDIS_ENDPOINT"
+  db-endpoint: "PLACEHOLDER_DB_ENDPOINT"
+  sqs-queue-url: "PLACEHOLDER_SQS_QUEUE_URL"
+  opensearch-endpoint: "PLACEHOLDER_OPENSEARCH_ENDPOINT"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+stringData:
+  password: "password123"  # Must match databases.tf value
+---
+# ================= AVAILABILITY SERVICE =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: availability-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: availability
+  template:
+    metadata:
+      labels:
+        app: availability
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: availability
+          image: 905418449359.dkr.ecr.us-east-1.amazonaws.com/availability-service:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+            - name: OPENSEARCH_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: opensearch-endpoint
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: redis-endpoint
+            - name: REDIS_PORT
+              value: "6379"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: availability-service
+spec:
+  type: NodePort
+  selector:
+    app: availability
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30001
+
+# ================= ORDER SERVICE =================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order
+  template:
+    metadata:
+      labels:
+        app: order
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: order
+          image: 905418449359.dkr.ecr.us-east-1.amazonaws.com/order-service:latest
+          ports:
+            - containerPort: 8001
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+            - name: SQS_QUEUE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: sqs-queue-url
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  type: NodePort
+  selector:
+    app: order
+  ports:
+    - port: 8001
+      targetPort: 8001
+      nodePort: 30002
+
+# ================= FULFILLMENT WORKER =================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulfillment-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fulfillment
+  template:
+    metadata:
+      labels:
+        app: fulfillment
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: fulfillment
+          image: 905418449359.dkr.ecr.us-east-1.amazonaws.com/fulfillment-worker:latest
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+            - name: SQS_QUEUE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: sqs-queue-url
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: db-endpoint
+            - name: DB_NAME
+              value: "postgres"
+            - name: DB_USER
+              value: "postgres"
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          # Worker doesn't have HTTP endpoint, so we use a simple exec probe
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "ps aux | grep '[p]ython.*main.py' || exit 1"
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

@@ -20,9 +20,23 @@ systemctl enable docker
 systemctl start docker
 
 ############################
-# 2. Install k3s
+# 2. Install k3s with optimized configuration for low-resource environment
 ############################
-curl -sfL https://get.k3s.io | sh -
+# Create k3s config directory
+mkdir -p /etc/rancher/k3s
+
+# Configure k3s for low-resource environment
+cat <<EOF > /etc/rancher/k3s/config.yaml
+---
+kubelet-arg:
+  - "max-pods=10"
+  - "eviction-hard=memory.available<100Mi"
+  - "eviction-soft=memory.available<200Mi"
+  - "eviction-soft-grace-period=memory.available=30s"
+EOF
+
+# Install k3s
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
 
 sleep 30
 
@@ -56,10 +70,26 @@ k3s kubectl create secret docker-registry ecr-secret \
   --dry-run=client -o yaml | k3s kubectl apply -f -
 
 ############################
-# 7. Create Deployment YAML
+# 7. Create ConfigMap and Secret
 ############################
 mkdir -p /opt/k8s
 
+# Create ConfigMap with application configuration
+k3s kubectl create configmap app-config \
+  --from-literal=redis-endpoint="${REDIS_ENDPOINT}" \
+  --from-literal=db-endpoint="${DB_ENDPOINT}" \
+  --from-literal=sqs-queue-url="${SQS_QUEUE_URL}" \
+  --from-literal=opensearch-endpoint="https://${OPENSEARCH_ENDPOINT}" \
+  --dry-run=client -o yaml | k3s kubectl apply -f -
+
+# Create Secret with DB credentials
+k3s kubectl create secret generic db-credentials \
+  --from-literal=password="password123" \
+  --dry-run=client -o yaml | k3s kubectl apply -f -
+
+############################
+# 8. Create Deployment YAML with Resource Limits
+############################
 cat <<EOF > /opt/k8s/app.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -83,10 +113,56 @@ spec:
         ports:
         - containerPort: 8000
         env:
+        - name: AWS_REGION
+          value: "${AWS_REGION}"
         - name: OPENSEARCH_URL
-          value: "https://${OPENSEARCH_ENDPOINT}"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: opensearch-endpoint
         - name: REDIS_HOST
-          value: "${REDIS_ENDPOINT}"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis-endpoint
+        - name: REDIS_PORT
+          value: "6379"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: availability-service
+spec:
+  type: NodePort
+  selector:
+    app: availability
+  ports:
+  - port: 8000
+    targetPort: 8000
+    nodePort: 30001
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -110,10 +186,46 @@ spec:
         ports:
         - containerPort: 8001
         env:
-        - name: DB_HOST
-          value: "${DB_ENDPOINT}"
         - name: AWS_REGION
           value: "${AWS_REGION}"
+        - name: SQS_QUEUE_URL
+          value: "${SQS_QUEUE_URL}"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  type: NodePort
+  selector:
+    app: order
+  ports:
+  - port: 8001
+    targetPort: 8001
+    nodePort: 30002
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -135,14 +247,50 @@ spec:
       - name: fulfillment
         image: ${FULFILLMENT_IMAGE_URL}:latest
         env:
-        - name: SQS_QUEUE_URL
-          value: "${SQS_QUEUE_URL}"
         - name: AWS_REGION
           value: "${AWS_REGION}"
+        - name: SQS_QUEUE_URL
+          value: "${SQS_QUEUE_URL}"
+        - name: DB_HOST
+          value: "${DB_ENDPOINT}"
+        - name: DB_NAME
+          value: "postgres"
+        - name: DB_USER
+          value: "postgres"
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep '[p]ython.*main.py' || exit 1"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
 EOF
 
 ############################
-# 8. Apply to cluster
+# 9. Apply to cluster
 ############################
 sleep 30
 k3s kubectl apply -f /opt/k8s/app.yaml
+
+# Wait for deployments to be ready
+k3s kubectl wait --for=condition=available --timeout=300s deployment/availability-app
+k3s kubectl wait --for=condition=available --timeout=300s deployment/order-app
+k3s kubectl wait --for=condition=available --timeout=300s deployment/fulfillment-worker
+
+# Show pod status
+k3s kubectl get pods -A

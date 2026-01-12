@@ -170,6 +170,10 @@ class OrderRequest(BaseModel):
     customer_id: str
     items: List[OrderItem]
 
+@app.get("/")
+def health_check():
+    return {"status": "healthy", "service": "order-service"}
+
 @app.post("/order")
 def place_order(order: OrderRequest):
     order_id = str(uuid.uuid4()) # Generate ID immediately

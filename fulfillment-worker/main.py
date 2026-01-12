@@ -3,30 +3,42 @@ import json
 import boto3
 import time
 import psycopg2
+import logging
 
-# Config
-SQS_QUEUE_URL = os.environ.get('SQS_QUEUE_URL')
-DB_HOST = os.environ.get('DB_HOST')
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASS = "password123"
-REGION = os.environ.get("AWS_REGION")
+# Logging (important for k8s)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
+# Environment variables
+SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL")
+DB_HOST = os.environ.get("DB_HOST")
+DB_NAME = os.environ.get("DB_NAME", "postgres")
+DB_USER = os.environ.get("DB_USER", "postgres")
+DB_PASS = os.environ.get("DB_PASS", "password123")
+AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+
+# Validation
 if not SQS_QUEUE_URL:
     raise RuntimeError("SQS_QUEUE_URL is required")
 
 if not DB_HOST:
     raise RuntimeError("DB_HOST is required")
 
-if not REGION:
+if not AWS_REGION:
     raise RuntimeError("AWS_REGION or AWS_DEFAULT_REGION is required")
 
-print(f"Starting fulfillment worker for queue: {SQS_QUEUE_URL} in region: {REGION}")
+logging.info(f"Starting fulfillment worker")
+logging.info(f"SQS Queue: {SQS_QUEUE_URL}")
+logging.info(f"AWS Region: {AWS_REGION}")
+logging.info(f"DB Host: {DB_HOST}")
 
-sqs = boto3.client('sqs', region_name=REGION)
+# AWS Clients
+sqs = boto3.client("sqs", region_name=AWS_REGION)
 
-
-def connect_db():
+# Database Connection
+def get_db_connection():
     return psycopg2.connect(
         host=DB_HOST,
         database=DB_NAME,
@@ -34,26 +46,35 @@ def connect_db():
         password=DB_PASS
     )
 
-def process_order(body):
-    data = json.loads(body)
-    order_id = data.get("order_id")
-    items = data.get("items")
-    customer_id = data.get("customer_id")
+# Order Processing Logic
+def process_order(message_body: str) -> bool:
+    data = json.loads(message_body)
 
-    conn = connect_db()
+    order_id = data.get("order_id")
+    customer_id = data.get("customer_id")
+    items = data.get("items", [])
+
+    if not order_id or not items:
+        logging.error("Invalid order payload")
+        return False
+
+    conn = get_db_connection()
     cur = conn.cursor()
-    
+
     try:
-        print(f"Processing Order {order_id}...")
+        logging.info(f"Processing order {order_id}")
+
+        # Prevent duplicate processing
         cur.execute(
             "SELECT 1 FROM orders WHERE order_id = %s",
             (order_id,)
         )
         if cur.fetchone():
-            print(f"Order {order_id} already processed, skipping")
+            logging.info(f"Order {order_id} already processed")
+            conn.rollback()
             return True
-        
-        # 1. Start ACID Transaction
+
+        # ACID inventory update
         for item in items:
             cur.execute(
                 """
@@ -64,36 +85,46 @@ def process_order(body):
                 (item["item_id"], item["warehouse_id"])
             )
             row = cur.fetchone()
+
             if not row or row[0] < item["quantity"]:
                 raise Exception(f"Insufficient stock for {item['item_id']}")
 
             new_stock = row[0] - item["quantity"]
             cur.execute(
-                "UPDATE inventory SET stock = %s WHERE item_id = %s AND warehouse_id = %s",
+                """
+                UPDATE inventory
+                SET stock = %s
+                WHERE item_id = %s AND warehouse_id = %s
+                """,
                 (new_stock, item["item_id"], item["warehouse_id"])
             )
 
-        # 2. Insert Order Record
+        # Insert order record
         cur.execute(
-            "INSERT INTO orders (order_id, customer_id, items) VALUES (%s, %s, %s)",
+            """
+            INSERT INTO orders (order_id, customer_id, items)
+            VALUES (%s, %s, %s)
+            """,
             (order_id, customer_id, json.dumps(items))
         )
 
         conn.commit()
-        print(f"Order {order_id} processed successfully")
+        logging.info(f"Order {order_id} processed successfully")
         return True
+
     except Exception as e:
         conn.rollback()
-        print(f"Order {order_id} failed: {e}")
+        logging.error(f"Order {order_id} failed: {e}")
         return False
 
     finally:
         cur.close()
         conn.close()
 
-    
+# Main Worker Loop (NEVER EXIT)
+def poll_sqs_forever():
+    logging.info("Worker is now polling SQS...")
 
-def poll_sqs():
     while True:
         try:
             response = sqs.receive_message(
@@ -102,19 +133,26 @@ def poll_sqs():
                 WaitTimeSeconds=20
             )
 
-            if "Messages" in response:
-                for msg in response["Messages"]:
-                    body = msg["Body"]
-                    receipt = msg["ReceiptHandle"]
+            messages = response.get("Messages", [])
 
-                    if process_order(body):
-                        sqs.delete_message(
-                            QueueUrl=SQS_QUEUE_URL,
-                            ReceiptHandle=receipt
-                        )
+            if not messages:
+                time.sleep(2)
+                continue
+
+            for msg in messages:
+                receipt_handle = msg["ReceiptHandle"]
+                body = msg["Body"]
+
+                if process_order(body):
+                    sqs.delete_message(
+                        QueueUrl=SQS_QUEUE_URL,
+                        ReceiptHandle=receipt_handle
+                    )
+
         except Exception as e:
-            print(f"SQS polling error: {e}")
+            logging.error(f"SQS polling error: {e}")
             time.sleep(5)
 
+# Entrypoint
 if __name__ == "__main__":
-    poll_sqs()
+    poll_sqs_forever()

@@ -47,6 +47,9 @@ resource "aws_key_pair" "k3s_key" {
 
 resource "aws_instance" "app_server" {
   ami           =  data.aws_ami.ubuntu.id #"ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS (US-East-1)
+  # NOTE: t3.micro (1GB RAM) is very tight for k3s + 3 containers
+  # Consider upgrading to t3.small (2GB RAM) or t3.medium (4GB RAM) for better performance
+  # The current setup includes resource limits and swap to help with t3.micro constraints
   instance_type = "t3.micro" # Free Tier
   
   key_name = aws_key_pair.k3s_key.key_name # Use 'vockey' if using Learner Lab, or create a keypair if personal account
