@@ -771,17 +771,45 @@
 //   }
 // }
 
-
-
 import 'package:flutter/material.dart';
-import 'home_screen.dart';
+import 'screens/role_selection_screen.dart';
 
 void main() {
-  runApp(
-    const MaterialApp(
+  runApp(const RapidDeliveryApp());
+}
+
+class RapidDeliveryApp extends StatelessWidget {
+  const RapidDeliveryApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
       title: 'Rapid Delivery',
       debugShowCheckedModeBanner: false,
-      home: HomeScreen(),
-    ),
-  );
+      theme: ThemeData(
+        primaryColor: const Color(0xFF0C831F), // Blinkit Green
+        scaffoldBackgroundColor: const Color(0xFFF4F6FB),
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0C831F),
+          brightness: Brightness.light,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          iconTheme: IconThemeData(color: Colors.black),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0C831F),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+      home: const RoleSelectionScreen(),
+    );
+  }
 }

@@ -1,0 +1,102 @@
+version: "3.9"
+
+services:
+  # =====================================================
+  # BACKING SERVICES (Required for local development)
+  # =====================================================
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: opensearch
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin@123
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    restart: unless-stopped
+
+  # =====================================================
+  # APPLICATION SERVICES
+  # =====================================================
+
+  availability-service:
+    build: ./availability-service
+    container_name: availability-service
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENSEARCH_URL=http://opensearch:9200
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - opensearch
+    restart: unless-stopped
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "8001:8001"
+    environment:
+      - ENV=local
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/postgres
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  fulfillment-worker:
+    build: ./fulfillment-worker
+    container_name: fulfillment-worker
+    environment:
+      - AWS_REGION=us-east-1
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL:-dummy}
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_PASS=password
+      - DB_NAME=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  opensearch_data:

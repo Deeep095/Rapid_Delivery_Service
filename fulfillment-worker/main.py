@@ -5,37 +5,41 @@ import time
 import psycopg2
 import logging
 
-# Logging (important for k8s)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-# Environment variables
 SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL")
 DB_HOST = os.environ.get("DB_HOST")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "password123")
-AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
 
-# Validation
 if not SQS_QUEUE_URL:
     raise RuntimeError("SQS_QUEUE_URL is required")
 
 if not DB_HOST:
     raise RuntimeError("DB_HOST is required")
 
-if not AWS_REGION:
-    raise RuntimeError("AWS_REGION or AWS_DEFAULT_REGION is required")
+logging.info("Starting fulfillment worker")
 
-logging.info(f"Starting fulfillment worker")
-logging.info(f"SQS Queue: {SQS_QUEUE_URL}")
+# Resolve AWS region the RIGHT way
+session = boto3.session.Session()
+AWS_REGION = session.region_name
+
+if not AWS_REGION:
+    raise RuntimeError(
+        "AWS region could not be resolved. "
+        "Set AWS_REGION, AWS_DEFAULT_REGION, or configure IAM properly."
+    )
+
 logging.info(f"AWS Region: {AWS_REGION}")
+logging.info(f"SQS Queue: {SQS_QUEUE_URL}")
 logging.info(f"DB Host: {DB_HOST}")
 
-# AWS Clients
-sqs = boto3.client("sqs", region_name=AWS_REGION)
+sqs = session.client("sqs")
+
 
 # Database Connection
 def get_db_connection():

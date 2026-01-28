@@ -8,10 +8,10 @@ resource "aws_iam_role" "ec2_role" {
   })
 }
 
-# 1. Allow ECR Pull (Existing)
-resource "aws_iam_role_policy_attachment" "ecr_read" {
+# 1. Allow ECR Pull and Push
+resource "aws_iam_role_policy_attachment" "ecr_power_user" {
   role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
 }
 
 # 2. Allow SQS Access (Critical for the new architecture)
@@ -35,6 +35,48 @@ resource "aws_iam_role_policy" "sqs_policy" {
   })
 }
 
+# 3. Allow SSM Parameter Store Access (for K3s token sharing between nodes)
+resource "aws_iam_role_policy" "ssm_policy" {
+  name = "ssm_access_policy"
+  role = aws_iam_role.ec2_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:DeleteParameter"
+        ]
+        Resource = "arn:aws:ssm:${var.aws-region}:${data.aws_caller_identity.current.account_id}:parameter/rapid-delivery/*"
+      }
+    ]
+  })
+}
+
+# 4. Allow OpenSearch Access (for warehouse geo-queries)
+resource "aws_iam_role_policy" "opensearch_policy" {
+  name = "opensearch_access_policy"
+  role = aws_iam_role.ec2_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "es:ESHttpGet",
+          "es:ESHttpPut",
+          "es:ESHttpPost",
+          "es:ESHttpDelete"
+        ]
+        Resource = "arn:aws:es:${var.aws-region}:${data.aws_caller_identity.current.account_id}:domain/rapid-search/*"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "rapid_delivery_profile"
   role = aws_iam_role.ec2_role.name
@@ -45,38 +87,36 @@ resource "aws_key_pair" "k3s_key" {
   public_key = file("${path.module}/k3s-key.pub")
 }
 
-resource "aws_instance" "app_server" {
-  ami           =  data.aws_ami.ubuntu.id #"ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS (US-East-1)
-  # NOTE: t3.micro (1GB RAM) is very tight for k3s + 3 containers
-  # Consider upgrading to t3.small (2GB RAM) or t3.medium (4GB RAM) for better performance
-  # The current setup includes resource limits and swap to help with t3.micro constraints
-  instance_type = "t3.micro" # Free Tier
+# ===================================================================
+# INSTANCE 1: K3s MASTER (API Server + All Deployments)
+# Runs K3s server, deploys all services, exposes via Nginx on port 80
+# ===================================================================
+resource "aws_instance" "api_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro" # Free Tier - 1GB RAM
   
-  key_name = aws_key_pair.k3s_key.key_name # Use 'vockey' if using Learner Lab, or create a keypair if personal account
-
+  key_name = aws_key_pair.k3s_key.key_name
   vpc_security_group_ids = [aws_security_group.rapid_delivery_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
 
   root_block_device {
-    volume_size = 20          # Free tier (<=30 GB)
+    volume_size = 20 # Free tier
     volume_type = "gp2"
     delete_on_termination = true
   }
 
-
-  # Inject Database Endpoints into the startup script
-  user_data = templatefile("user_data.sh", 
-  {
-    AVAIL_IMAGE_URL     = aws_ecr_repository.availability_repo.repository_url
-    ORDER_IMAGE_URL     = aws_ecr_repository.order_repo.repository_url
-
-    FULFILLMENT_IMAGE_URL  = aws_ecr_repository.fulfillment_repo.repository_url
-    SQS_QUEUE_URL       = aws_sqs_queue.order_queue.url
-    OPENSEARCH_ENDPOINT = aws_opensearch_domain.search.endpoint
-    REDIS_ENDPOINT      = aws_elasticache_cluster.redis.cache_nodes[0].address
-    DB_ENDPOINT         = aws_db_instance.postgres.address
-    ACCOUNT_ID          = data.aws_caller_identity.current.account_id
-    AWS_REGION          = var.aws-region 
+  # K3s Master - deploys all services, saves token to SSM
+  user_data = templatefile("user_data_api.sh", {
+    AVAIL_IMAGE_URL       = aws_ecr_repository.availability_repo.repository_url
+    ORDER_IMAGE_URL       = aws_ecr_repository.order_repo.repository_url
+    FULFILLMENT_IMAGE_URL = aws_ecr_repository.fulfillment_repo.repository_url
+    SQS_QUEUE_URL         = aws_sqs_queue.order_queue.url
+    SNS_TOPIC_ARN         = aws_sns_topic.rapid_notifications.arn
+    OPENSEARCH_ENDPOINT   = aws_opensearch_domain.search.endpoint
+    REDIS_ENDPOINT        = aws_elasticache_cluster.redis.cache_nodes[0].address
+    DB_ENDPOINT           = aws_db_instance.postgres.address
+    ACCOUNT_ID            = data.aws_caller_identity.current.account_id
+    AWS_REGION            = var.aws-region 
   })
 
   depends_on = [
@@ -85,7 +125,47 @@ resource "aws_instance" "app_server" {
     aws_opensearch_domain.search
   ]
 
-  tags = { Name = "RapidDelivery-K3s-Node" }
+  tags = { 
+    Name = "RapidDelivery-K3s-Master" 
+    Role = "master"
+  }
+}
+
+# ===================================================================
+# INSTANCE 2: K3s WORKER (Agent Node)
+# Joins the master cluster, provides extra compute capacity
+# ===================================================================
+resource "aws_instance" "worker_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro" # Free Tier - 1GB RAM
+  
+  key_name = aws_key_pair.k3s_key.key_name
+  vpc_security_group_ids = [aws_security_group.rapid_delivery_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+
+  root_block_device {
+    volume_size = 20 # Free tier
+    volume_type = "gp2"
+    delete_on_termination = true
+  }
+
+  # K3s Agent - joins master cluster via SSM token
+  user_data = templatefile("user_data_worker.sh", {
+    ACCOUNT_ID = data.aws_caller_identity.current.account_id
+    AWS_REGION = var.aws-region 
+  })
+
+  # Worker must wait for master to be ready
+  depends_on = [
+    aws_instance.api_server,
+    aws_db_instance.postgres,
+    aws_elasticache_cluster.redis
+  ]
+
+  tags = { 
+    Name = "RapidDelivery-K3s-Worker"
+    Role = "worker"
+  }
 }
 
 

@@ -14,12 +14,14 @@ resource "aws_security_group" "rapid_delivery_sg" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP - Nginx reverse proxy"
   }
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "SSH access"
   }
   # Allow Kubernetes NodePort services (30001-30002)
   ingress {
@@ -29,6 +31,30 @@ resource "aws_security_group" "rapid_delivery_sg" {
     cidr_blocks = ["0.0.0.0/0"]
     description = "Kubernetes NodePort services"
   }
+  # K3s API server port (for worker nodes to join cluster)
+  ingress {
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    self        = true
+    description = "K3s API server - cluster internal"
+  }
+  # Flannel VXLAN for K3s networking between nodes
+  ingress {
+    from_port   = 8472
+    to_port     = 8472
+    protocol    = "udp"
+    self        = true
+    description = "K3s Flannel VXLAN"
+  }
+  # Kubelet metrics
+  ingress {
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    self        = true
+    description = "K3s Kubelet metrics"
+  }
 
   # Allow all internal communication (Microservices <-> DBs)
   ingress {
@@ -36,6 +62,7 @@ resource "aws_security_group" "rapid_delivery_sg" {
     to_port   = 0
     protocol  = "-1"
     self      = true
+    description = "All internal traffic"
   }
 
   egress {
@@ -87,14 +114,22 @@ resource "aws_opensearch_domain" "search" {
     volume_size = 10
   }
 
-  # Allow access (Simple policy for demo)
+  # Allow access from EC2 role (for microservices) and account root (for seeding)
   access_policies = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }  //AWS no longer allows wildcard (*) principals for OpenSearch unless you enable fine-grained access control.
-      Action    = "es:*"
-      Resource  = "arn:aws:es:us-east-1:${data.aws_caller_identity.current.account_id}:domain/rapid-search/*"
-    }]
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { AWS = aws_iam_role.ec2_role.arn }
+        Action    = "es:*"
+        Resource  = "arn:aws:es:us-east-1:${data.aws_caller_identity.current.account_id}:domain/rapid-search/*"
+      },
+      {
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "es:*"
+        Resource  = "arn:aws:es:us-east-1:${data.aws_caller_identity.current.account_id}:domain/rapid-search/*"
+      }
+    ]
   })
 }
