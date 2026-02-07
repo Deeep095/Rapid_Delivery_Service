@@ -11,7 +11,7 @@ class ApiService {
 
   /// Set to TRUE when deploying to AWS
   /// Set to FALSE for local Docker testing
-  static const bool useAwsBackend = true;
+  static const bool useAwsBackend = false;
 
   // =====================================================
   // BASE URLs - Automatically switches between AWS/Local

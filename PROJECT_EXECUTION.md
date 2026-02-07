@@ -368,3 +368,86 @@ aws ecr delete-repository --repository-name fulfillment-worker --force
 | SQS | 1M requests | $0* |
 
 *Within free tier limits for first 12 months
+
+---
+
+## 🖥️ Local Development Setup
+
+For local development without AWS, use the `local/` folder setup.
+
+### Quick Start - Local
+```powershell
+# 1. Start Docker services
+cd d:\Rapid_Delivery_Service\local
+docker-compose -f docker-compose-local.yaml up -d
+
+# 2. Wait for services (~30 seconds)
+docker ps
+
+# 3. Seed databases
+python seed_local.py
+
+# 4. Update Flutter config
+# In rapid_delivery_app/lib/api_service.dart:
+# Set: useAwsBackend = false
+
+# 5. Run Flutter app
+cd ..\rapid_delivery_app
+flutter run -d chrome
+```
+
+### Local Services
+| Service | URL |
+|---------|-----|
+| PostgreSQL | localhost:5432 |
+| Redis | localhost:6379 |
+| OpenSearch | localhost:9200 |
+
+### Test Coordinates for Local
+| City | Lat | Lon |
+|------|-----|-----|
+| Jaipur | 26.9124 | 75.7873 |
+| Delhi | 28.6139 | 77.2090 |
+| Mumbai | 19.0760 | 72.8777 |
+
+### Stop Local Services
+```powershell
+cd local
+docker-compose -f docker-compose-local.yaml down
+```
+
+---
+
+## 📱 Flutter App Structure
+
+```
+rapid_delivery_app/lib/
+├── main.dart                  # App entry point
+├── models.dart                # Data models (Product, Category, etc.)
+├── api_service.dart           # API client (AWS/Local toggle)
+├── aws_config.dart            # Auto-generated AWS endpoints
+├── data_repository.dart       # Product catalog & banners
+├── home_screen.dart           # Legacy home screen
+├── location_sheet.dart        # Location picker
+├── orders_screen.dart         # Order list (legacy)
+├── widgets/                   # Reusable UI components
+│   ├── widgets.dart           # Barrel export
+│   ├── banner_carousel.dart   # Promo banners
+│   ├── category_chips.dart    # Category filter
+│   ├── product_card.dart      # Product display card
+│   ├── cart_bottom_bar.dart   # Sticky cart bar
+│   └── delivery_address_bar.dart
+├── screens/
+│   ├── role_selection_screen.dart  # Login/role picker
+│   ├── buyer/
+│   │   ├── buyer_home_screen.dart  # Main shopping screen
+│   │   ├── cart_screen.dart        # Cart & checkout
+│   │   └── order_history_screen.dart
+│   └── manager/
+│       ├── manager_home_screen.dart  # Warehouse selector
+│       └── inventory_screen.dart     # Stock management
+└── services/
+    ├── auth_service.dart      # Google/demo auth
+    └── inventory_service.dart # Manager API calls
+```
+

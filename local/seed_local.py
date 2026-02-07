@@ -61,16 +61,30 @@ ITEMS = [
 ]
 
 WAREHOUSES = [
-    ("wh_jaipur", 26.9124, 75.7873, "Jaipur"),
-    ("wh_delhi", 28.6139, 77.2090, "Delhi"),
-    ("wh_mumbai", 19.0760, 72.8777, "Mumbai"),
+    # Jaipur Region
+    ("wh_jaipur_central", 26.9124, 75.7873, "Jaipur Central"),
+    ("wh_jaipur_malviya", 26.8505, 75.8043, "Jaipur Malviya Nagar"),
+    ("wh_lnmiit", 26.9020, 75.8680, "LNMIIT Jaipur"),
+    ("wh_jaipur_amer", 26.9855, 75.8513, "Jaipur Amer"),
+    # Delhi NCR
+    ("wh_delhi_central", 28.6139, 77.2090, "Delhi Central"),
+    ("wh_delhi_gurgaon", 28.4595, 77.0266, "Gurgaon"),
+    ("wh_delhi_noida", 28.5355, 77.3910, "Noida"),
+    # Other metros
+    ("wh_mumbai_central", 19.0760, 72.8777, "Mumbai Central"),
+    ("wh_bangalore_central", 12.9716, 77.5946, "Bangalore Central"),
+    ("wh_chennai_central", 13.0827, 80.2707, "Chennai Central"),
 ]
 
-INVENTORY = {
-    "wh_jaipur": {"apple": 100, "banana": 80, "milk": 50, "bread": 50, "coke": 100, "chips": 75, "eggs": 60, "cookie": 40, "rice": 200, "water": 150},
-    "wh_delhi": {"apple": 120, "banana": 100, "milk": 60, "bread": 45, "coke": 150, "chips": 90, "eggs": 80, "cookie": 55, "rice": 180, "water": 200},
-    "wh_mumbai": {"apple": 80, "banana": 120, "milk": 70, "bread": 55, "coke": 130, "chips": 60, "eggs": 70, "cookie": 35, "rice": 150, "water": 180},
-}
+# Products to seed (matching Flutter app catalog)
+PRODUCTS = ["apple", "banana", "orange", "grapes", "milk", "eggs", "curd", "paneer", 
+            "chips", "cookie", "namkeen", "coke", "water", "juice", "bread", "cake", 
+            "rice", "oil", "atta", "icecream"]
+
+# Generate inventory for all warehouses
+INVENTORY = {}
+for wh_id, _, _, _ in WAREHOUSES:
+    INVENTORY[wh_id] = {product: 100 for product in PRODUCTS}
 
 # =====================================================
 # SEEDING FUNCTIONS
@@ -94,16 +108,18 @@ def seed_postgres():
             )
         """)
         
-        # Create orders table
+        # Drop and recreate orders table with correct schema
+        cur.execute("DROP TABLE IF EXISTS orders CASCADE")
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
+            CREATE TABLE orders (
+                order_id VARCHAR(50) PRIMARY KEY,
+                customer_id VARCHAR(100) NOT NULL,
+                status VARCHAR(50) DEFAULT 'PENDING',
                 items JSONB NOT NULL,
-                warehouse_id VARCHAR(50) NOT NULL,
-                status VARCHAR(50) DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        print("   ✅ Created orders table")
         
         # Insert items
         for item_id, name, price in ITEMS:

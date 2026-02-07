@@ -2,13 +2,13 @@
 set -e
 
 echo "=========================================="
-echo "K3S MASTER NODE - API Services + Local DBs"
+echo "K3S MASTER NODE - API Services"
 echo "=========================================="
 
 ############################
-# 0. Swap (critical for t3.small with local DBs)
+# 0. Swap (critical for t3.micro)
 ############################
-fallocate -l 4G /swapfile
+fallocate -l 2G /swapfile
 chmod 600 /swapfile
 mkswap /swapfile
 swapon /swapfile
@@ -31,70 +31,9 @@ unzip awscliv2.zip
 ./aws/install
 
 ############################
-# 3. Start Local Databases (Docker) - REPLACES AWS RDS/ElastiCache/OpenSearch
+# 3. Install K3s SERVER (Master)
 ############################
-echo "Starting local databases via Docker..."
-
-# Create data directories
-mkdir -p /data/postgres /data/redis /data/opensearch
-chmod 777 /data/opensearch
-
-# PostgreSQL (replaces RDS)
-docker run -d \
-  --name postgres \
-  --restart unless-stopped \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=password123 \
-  -e POSTGRES_DB=postgres \
-  -v /data/postgres:/var/lib/postgresql/data \
-  -p 5432:5432 \
-  postgres:15-alpine
-
-# Redis (replaces ElastiCache)
-docker run -d \
-  --name redis \
-  --restart unless-stopped \
-  -v /data/redis:/data \
-  -p 6379:6379 \
-  redis:7-alpine
-
-# OpenSearch (replaces AWS OpenSearch - saves ~$30/month!)
-docker run -d \
-  --name opensearch \
-  --restart unless-stopped \
-  -e "discovery.type=single-node" \
-  -e "plugins.security.disabled=true" \
-  -e "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" \
-  -v /data/opensearch:/usr/share/opensearch/data \
-  -p 9200:9200 \
-  opensearchproject/opensearch:2.11.0
-
-# Wait for databases to be ready
-echo "Waiting for databases to start..."
-sleep 30
-
-# Check database health
-until docker exec postgres pg_isready -U postgres; do
-  echo "Waiting for PostgreSQL..."
-  sleep 5
-done
-echo "PostgreSQL is ready!"
-
-until docker exec redis redis-cli ping | grep -q PONG; do
-  echo "Waiting for Redis..."
-  sleep 5
-done
-echo "Redis is ready!"
-
-until curl -s http://localhost:9200 | grep -q "cluster_name"; do
-  echo "Waiting for OpenSearch..."
-  sleep 10
-done
-echo "OpenSearch is ready!"
-
-############################
-# 4. Install K3s SERVER (Master)
-############################
+# Get private IP for cluster communication
 PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 
 mkdir -p /etc/rancher/k3s
@@ -112,18 +51,21 @@ kubelet-arg:
   - "eviction-soft-grace-period=memory.available=30s"
 EOF
 
+# Install K3s as SERVER (master node)
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --disable servicelb" sh -
 
+# Wait for K3s to be fully ready
 echo "Waiting for K3s to start..."
 sleep 45
 
+# Wait for node to be ready
 until k3s kubectl get nodes | grep -q " Ready"; do
   echo "Waiting for node to be ready..."
   sleep 10
 done
 
 ############################
-# 5. Save K3s token to SSM for worker node
+# 4. Save K3s token to SSM for worker node
 ############################
 K3S_TOKEN=$(cat /var/lib/rancher/k3s/server/node-token)
 aws ssm put-parameter \
@@ -143,20 +85,20 @@ aws ssm put-parameter \
 echo "K3s token saved to SSM Parameter Store"
 
 ############################
-# 6. Configure kubectl
+# 5. Configure kubectl
 ############################
 mkdir -p /root/.kube
 cp /etc/rancher/k3s/k3s.yaml /root/.kube/config
 
 ############################
-# 7. Login to ECR
+# 6. Login to ECR
 ############################
 aws ecr get-login-password --region ${AWS_REGION} \
  | docker login --username AWS \
  --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
 ############################
-# 8. Create imagePullSecret
+# 7. Create imagePullSecret
 ############################
 k3s kubectl create secret docker-registry ecr-secret \
   --docker-server=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com \
@@ -165,23 +107,22 @@ k3s kubectl create secret docker-registry ecr-secret \
   --dry-run=client -o yaml | k3s kubectl apply -f -
 
 ############################
-# 9. Create ConfigMap and Secret (LOCAL ENDPOINTS)
+# 8. Create ConfigMap and Secret
 ############################
 k3s kubectl create secret generic db-credentials \
   --from-literal=password="password123" \
   --dry-run=client -o yaml | k3s kubectl apply -f -
 
-# Use private IP for K8s pods to reach host Docker services
 k3s kubectl create configmap app-config \
-  --from-literal=redis-endpoint="$PRIVATE_IP" \
-  --from-literal=db-endpoint="$PRIVATE_IP" \
+  --from-literal=redis-endpoint="${REDIS_ENDPOINT}" \
+  --from-literal=db-endpoint="${DB_ENDPOINT}" \
   --from-literal=sqs-queue-url="${SQS_QUEUE_URL}" \
   --from-literal=sns-topic-arn="${SNS_TOPIC_ARN}" \
-  --from-literal=opensearch-endpoint="http://$PRIVATE_IP:9200" \
+  --from-literal=opensearch-endpoint="https://${OPENSEARCH_ENDPOINT}" \
   --dry-run=client -o yaml | k3s kubectl apply -f -
 
 ############################
-# 10. Deploy ALL Services
+# 9. Deploy ALL Services (Master manages all pods)
 ############################
 mkdir -p /opt/k8s
 
@@ -286,10 +227,7 @@ spec:
         - name: SNS_TOPIC_ARN
           value: "${SNS_TOPIC_ARN}"
         - name: DB_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: db-endpoint
+          value: "${DB_ENDPOINT}"
         - name: DB_PORT
           value: "5432"
         - name: DB_NAME
@@ -351,6 +289,7 @@ spec:
     spec:
       imagePullSecrets:
       - name: ecr-secret
+      # Schedule on worker node when available, fallback to master
       affinity:
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -370,10 +309,7 @@ spec:
         - name: SQS_QUEUE_URL
           value: "${SQS_QUEUE_URL}"
         - name: DB_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: db-endpoint
+          value: "${DB_ENDPOINT}"
         - name: DB_NAME
           value: "postgres"
         - name: DB_USER
@@ -384,10 +320,7 @@ spec:
               name: db-credentials
               key: password
         - name: REDIS_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: redis-endpoint
+          value: "${REDIS_ENDPOINT}"
         - name: REDIS_PORT
           value: "6379"
         resources:

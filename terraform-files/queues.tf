@@ -53,5 +53,5 @@ resource "aws_sns_topic_policy" "rapid_notifications_policy" {
   })
 }
 
-# Data source to get current AWS account ID
-data "aws_caller_identity" "current" {}
+# Data source already defined in main.tf
+# data "aws_caller_identity" "current" {}

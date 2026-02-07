@@ -24,9 +24,13 @@ if not DB_HOST:
 
 logging.info("Starting fulfillment worker")
 
-# Resolve AWS region the RIGHT way
-session = boto3.session.Session()
-AWS_REGION = session.region_name
+# Resolve AWS region - check env vars first, then fallback to session
+AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+
+if not AWS_REGION:
+    # Fallback to boto3 session
+    temp_session = boto3.session.Session()
+    AWS_REGION = temp_session.region_name
 
 if not AWS_REGION:
     raise RuntimeError(
@@ -38,7 +42,8 @@ logging.info(f"AWS Region: {AWS_REGION}")
 logging.info(f"SQS Queue: {SQS_QUEUE_URL}")
 logging.info(f"DB Host: {DB_HOST}")
 
-sqs = session.client("sqs")
+# Create SQS client with explicit region
+sqs = boto3.client("sqs", region_name=AWS_REGION)
 
 
 # Database Connection

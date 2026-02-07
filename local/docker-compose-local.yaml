@@ -1,20 +1,20 @@
-"""
-=============================================================
-LOCAL DOCKER COMPOSE - Rapid Delivery Service
-=============================================================
-Docker Compose file for local development.
-Runs PostgreSQL, Redis, and OpenSearch locally.
-
-USAGE:
-  cd local
-  docker-compose -f docker-compose-local.yaml up -d
-  python seed_local.py
-=============================================================
-"""
+# =============================================================
+# LOCAL DOCKER COMPOSE - Rapid Delivery Service
+# =============================================================
+# Complete local development stack with all services
+# 
+# USAGE:
+#   cd local
+#   docker-compose -f docker-compose-local.yaml up -d --build
+#   python seed_local.py
+# =============================================================
 
 version: '3.8'
 
 services:
+  # =====================================================
+  # DATABASES
+  # =====================================================
   postgres:
     image: postgres:15
     container_name: rapid_postgres
@@ -67,5 +67,62 @@ services:
       timeout: 10s
       retries: 5
 
+  # =====================================================
+  # MICROSERVICES
+  # =====================================================
+  availability-service:
+    build: ../availability-service
+    container_name: rapid_availability
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENSEARCH_URL=http://opensearch:9200
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENV=local
+    depends_on:
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  order-service:
+    build: ../order-service
+    container_name: rapid_order
+    ports:
+      - "8001:8001"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=rapid_delivery
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - ENV=local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  fulfillment-worker:
+    build: ../fulfillment-worker
+    container_name: rapid_fulfillment
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=rapid_delivery
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENV=local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+

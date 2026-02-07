@@ -59,8 +59,33 @@ output "api_base_url" {
 }
 
 # ===================================================================
-# AWS SERVICES ENDPOINTS (SQS/SNS remain on AWS, DBs are now local on EC2)
+# AWS SERVICES ENDPOINTS (For Local Docker Connection)
 # ===================================================================
+output "rds_endpoint" {
+  description = "PostgreSQL RDS endpoint (publicly accessible)"
+  value       = aws_db_instance.postgres.endpoint
+}
+
+output "rds_host" {
+  description = "PostgreSQL RDS host (without port)"
+  value       = aws_db_instance.postgres.address
+}
+
+output "redis_endpoint" {
+  description = "ElastiCache Redis endpoint (VPC-only, NOT publicly accessible)"
+  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
+}
+
+output "opensearch_endpoint" {
+  description = "OpenSearch endpoint"
+  value       = aws_opensearch_domain.search.endpoint
+}
+
+output "opensearch_url" {
+  description = "Full OpenSearch URL"
+  value       = "https://${aws_opensearch_domain.search.endpoint}"
+}
+
 output "sqs_queue_url" {
   description = "SQS Queue URL (publicly accessible via AWS API)"
   value       = aws_sqs_queue.order_queue.url
@@ -77,24 +102,6 @@ output "aws_region" {
 }
 
 # ===================================================================
-# LOCAL DATABASES (Running in Docker on EC2)
-# ===================================================================
-output "local_postgres_info" {
-  description = "PostgreSQL running locally on EC2 via Docker"
-  value       = "postgresql://postgres:password123@${aws_instance.api_server.public_ip}:5432/postgres"
-}
-
-output "local_redis_info" {
-  description = "Redis running locally on EC2 via Docker"
-  value       = "${aws_instance.api_server.public_ip}:6379"
-}
-
-output "local_opensearch_info" {
-  description = "OpenSearch running locally on EC2 via Docker"
-  value       = "http://${aws_instance.api_server.public_ip}:9200"
-}
-
-# ===================================================================
 # CONNECTION SUMMARY
 # ===================================================================
 output "connection_info" {
@@ -102,7 +109,7 @@ output "connection_info" {
   value = <<-EOT
 
   🎯 K3s CLUSTER ARCHITECTURE:
-     Master: ${aws_instance.api_server.public_ip} (runs all services + local DBs)
+     Master: ${aws_instance.api_server.public_ip} (runs all services)
      Worker: ${aws_instance.worker_server.public_ip} (agent node for extra capacity)
   
   🌐 API ENDPOINTS (via Nginx on port 80):
@@ -113,14 +120,12 @@ output "connection_info" {
      Subscribe:    http://${aws_instance.api_server.public_ip}/subscribe
      Health:       http://${aws_instance.api_server.public_ip}/health
   
-  📊 LOCAL DATABASES (Docker on EC2 - SAVES ~$50-60/month!):
-     PostgreSQL:  localhost:5432 (inside EC2)
-     Redis:       localhost:6379 (inside EC2)
-     OpenSearch:  http://localhost:9200 (inside EC2)
-  
-  📊 AWS SERVICES (Still on AWS - FREE TIER):
-     SQS:         ${aws_sqs_queue.order_queue.url}
-     SNS:         ${aws_sns_topic.rapid_notifications.arn}
+  📊 AWS SERVICES:
+     RDS:        ${aws_db_instance.postgres.endpoint}
+     OpenSearch: https://${aws_opensearch_domain.search.endpoint}
+     SQS:        ${aws_sqs_queue.order_queue.url}
+     SNS:        ${aws_sns_topic.rapid_notifications.arn}
+     Redis:      ${aws_elasticache_cluster.redis.cache_nodes[0].address} (VPC-only)
   
   🔑 SSH ACCESS:
      ssh -i k3s-key ubuntu@${aws_instance.api_server.public_ip}
@@ -128,22 +133,16 @@ output "connection_info" {
   
   📱 FLUTTER CONFIG:
      Run: ./generate_flutter_config.ps1
-  
-  💰 COST SAVINGS:
-     - OpenSearch t3.small: ~$30/month SAVED
-     - RDS db.t3.micro:     ~$15-20/month SAVED
-     - ElastiCache:         ~$15/month SAVED
-     - TOTAL SAVINGS:       ~$50-65/month!
   EOT
 }
 
 output "db_endpoint" {
-  description = "PostgreSQL endpoint (local on EC2)"
-  value       = "${aws_instance.api_server.private_ip}:5432"
+  description = "RDS PostgreSQL endpoint"
+  value       = aws_db_instance.postgres.address
 }
 
 output "db_password" {
   description = "Database password (for reference)"
-  value       = "password123"
+  value       = "password123"  # Match the value in databases.tf
   sensitive   = true
 }

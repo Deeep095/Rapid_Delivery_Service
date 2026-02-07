@@ -199,6 +199,75 @@ curl http://localhost:30001/
 
 ---
 
+## 🤖 GitHub Actions CI/CD
+
+The project includes automated CI/CD via `.github/workflows/deploy.yml`.
+
+### Workflow Features
+- **Smart Change Detection**: Only builds services that changed
+- **Commit SHA Tagging**: Images tagged with both `latest` and commit SHA
+- **Auto-Deploy**: Automatically restarts K8s deployments after ECR push
+- **Manual Trigger**: Supports `workflow_dispatch` for manual builds
+
+### Required GitHub Secrets
+| Secret | Description |
+|--------|-------------|
+| `AWS_ACCOUNT_ID` | Your AWS account ID |
+| `AWS_ACCESS_KEY_ID` | IAM access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
+| `EC2_API_HOST` | EC2 master IP address |
+| `EC2_SSH_KEY` | Contents of k3s-key private key |
+
+### Required GitHub Variables
+| Variable | Description |
+|----------|-------------|
+| `AWS_REGION` | AWS region (e.g., `us-east-1`) |
+
+### How It Works
+1. Push code to `main` branch with changes in service folders
+2. GitHub Actions detects which services changed
+3. Builds and pushes Docker images to ECR
+4. SSHs into EC2 and runs `kubectl rollout restart`
+5. Posts deployment summary to workflow
+
+### Trigger Manually
+Go to Actions → "Build & Push Services to ECR" → Run workflow
+
+---
+
+## 📱 Frontend (Flutter App) vs Blinkit
+
+### ✅ Implemented Features
+| Feature | Status |
+|---------|--------|
+| Product catalog with categories | ✅ |
+| Search with filters | ✅ |
+| Location-based warehouse selection | ✅ |
+| Cart management | ✅ |
+| Order placement | ✅ |
+| Order history | ✅ |
+| Real-time stock checking | ✅ |
+| Role-based UI (Buyer/Manager) | ✅ |
+| Banner carousel | ✅ |
+| Category chips | ✅ |
+| Discount badges | ✅ |
+| Best seller tags | ✅ |
+| Delivery time estimate UI | ✅ |
+
+### 🔜 Roadmap Features
+| Feature | Priority |
+|---------|----------|
+| Push notifications | High |
+| Payment gateway integration | High |
+| Live order tracking | Medium |
+| Multiple saved addresses | Medium |
+| Promo codes / coupons | Medium |
+| Product reviews & ratings | Low |
+| Dark mode | Low |
+| Social login (Facebook, Apple) | Low |
+
+---
+
 ## 📝 Quick Reference Commands
 
 ### SSH into EC2

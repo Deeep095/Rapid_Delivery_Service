@@ -264,3 +264,54 @@ docker exec postgres psql -U postgres -c "\d orders"
 | Order history | ✅ returns orders | ✅ returns orders |
 | Flutter cart | ✅ works | ✅ works |
 | Flutter checkout | ✅ works | ✅ works |
+
+---
+
+## 6️⃣ FLUTTER APP TESTING
+
+### UI Components to Verify
+
+| Component | Expected Behavior |
+|-----------|------------------|
+| **Banner Carousel** | Auto-scrolling promo banners at top |
+| **Category Chips** | Horizontal scroll, highlight on select |
+| **Product Cards** | Discount badge, best seller tag, ADD button |
+| **Cart Bottom Bar** | Sticky bar showing items & total |
+| **Delivery Address Bar** | Shows location + "10 min" badge |
+| **Search** | Filters products in real-time |
+
+### Test Flow - Buyer
+1. Open app → Role Selection screen appears
+2. Click "Continue as Demo User"
+3. Location sheet opens → Select "LNMIIT Campus"
+4. Home screen loads with:
+   - Delivery address bar at top
+   - Promo banners
+   - Category chips (All, Fruits, Dairy, etc.)
+   - Product grid with stock levels
+5. Filter by category → Grid updates
+6. Search "apple" → Shows matching products
+7. Add items → Cart bar appears at bottom
+8. Tap "View Cart" → Cart screen opens
+9. Place order → Success dialog
+10. Check Order History → Order visible
+
+### Test Flow - Manager
+1. Click "I'm a Warehouse Manager"
+2. Enter warehouse details
+3. View dashboard with stats
+4. Open inventory screen
+5. Search/filter products
+6. Update stock levels
+7. Subscribe to notifications
+
+### Categories to Test
+- `all` - Shows all products
+- `fruits` - Apple, Banana, Orange, Grapes
+- `dairy` - Milk, Eggs, Curd, Paneer
+- `snacks` - Chips, Cookies, Namkeen
+- `beverages` - Cola, Water, Juice
+- `bakery` - Bread, Cake
+- `grocery` - Rice, Oil, Flour
+- `frozen` - Ice Cream
+

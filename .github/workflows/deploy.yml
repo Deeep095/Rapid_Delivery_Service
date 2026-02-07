@@ -7,15 +7,66 @@ on:
       - "availability-service/**"
       - "order-service/**"
       - "fulfillment-worker/**"
+  workflow_dispatch:  # Allow manual trigger
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  build-and-push:
+  # =====================================================
+  # JOB 1: Detect which services changed
+  # =====================================================
+  detect-changes:
     runs-on: ubuntu-latest
+    outputs:
+      availability: ${{ steps.changes.outputs.availability }}
+      order: ${{ steps.changes.outputs.order }}
+      fulfillment: ${{ steps.changes.outputs.fulfillment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed services
+        id: changes
+        run: |
+          # For manual trigger, build all
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "availability=true" >> $GITHUB_OUTPUT
+            echo "order=true" >> $GITHUB_OUTPUT
+            echo "fulfillment=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Detect changed files
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          
+          echo "availability=false" >> $GITHUB_OUTPUT
+          echo "order=false" >> $GITHUB_OUTPUT
+          echo "fulfillment=false" >> $GITHUB_OUTPUT
+          
+          if echo "$CHANGED" | grep -q "^availability-service/"; then
+            echo "availability=true" >> $GITHUB_OUTPUT
+          fi
+          if echo "$CHANGED" | grep -q "^order-service/"; then
+            echo "order=true" >> $GITHUB_OUTPUT
+          fi
+          if echo "$CHANGED" | grep -q "^fulfillment-worker/"; then
+            echo "fulfillment=true" >> $GITHUB_OUTPUT
+          fi
+
+  # =====================================================
+  # JOB 2: Build and Push Changed Services
+  # =====================================================
+  build-and-push:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    outputs:
+      services_updated: ${{ steps.summary.outputs.services }}
 
     steps:
       - name: Checkout code
@@ -33,18 +84,87 @@ jobs:
 
       # -------- Availability Service --------
       - name: Build & Push Availability Service
+        if: needs.detect-changes.outputs.availability == 'true'
         run: |
-          docker build -t $ECR_REGISTRY/availability-service:latest ./availability-service
+          echo "🔨 Building availability-service..."
+          docker build -t $ECR_REGISTRY/availability-service:$IMAGE_TAG ./availability-service
+          docker tag $ECR_REGISTRY/availability-service:$IMAGE_TAG $ECR_REGISTRY/availability-service:latest
+          docker push $ECR_REGISTRY/availability-service:$IMAGE_TAG
           docker push $ECR_REGISTRY/availability-service:latest
+          echo "✅ Pushed availability-service:$IMAGE_TAG"
 
       # -------- Order Service --------
       - name: Build & Push Order Service
+        if: needs.detect-changes.outputs.order == 'true'
         run: |
-          docker build -t $ECR_REGISTRY/order-service:latest ./order-service
+          echo "🔨 Building order-service..."
+          docker build -t $ECR_REGISTRY/order-service:$IMAGE_TAG ./order-service
+          docker tag $ECR_REGISTRY/order-service:$IMAGE_TAG $ECR_REGISTRY/order-service:latest
+          docker push $ECR_REGISTRY/order-service:$IMAGE_TAG
           docker push $ECR_REGISTRY/order-service:latest
+          echo "✅ Pushed order-service:$IMAGE_TAG"
 
       # -------- Fulfillment Worker --------
       - name: Build & Push Fulfillment Worker
+        if: needs.detect-changes.outputs.fulfillment == 'true'
         run: |
-          docker build -t $ECR_REGISTRY/fulfillment-worker:latest ./fulfillment-worker
+          echo "🔨 Building fulfillment-worker..."
+          docker build -t $ECR_REGISTRY/fulfillment-worker:$IMAGE_TAG ./fulfillment-worker
+          docker tag $ECR_REGISTRY/fulfillment-worker:$IMAGE_TAG $ECR_REGISTRY/fulfillment-worker:latest
+          docker push $ECR_REGISTRY/fulfillment-worker:$IMAGE_TAG
           docker push $ECR_REGISTRY/fulfillment-worker:latest
+          echo "✅ Pushed fulfillment-worker:$IMAGE_TAG"
+
+      - name: Summary of built services
+        id: summary
+        run: |
+          SERVICES=""
+          if [ "${{ needs.detect-changes.outputs.availability }}" == "true" ]; then
+            SERVICES="${SERVICES}availability,"
+          fi
+          if [ "${{ needs.detect-changes.outputs.order }}" == "true" ]; then
+            SERVICES="${SERVICES}order,"
+          fi
+          if [ "${{ needs.detect-changes.outputs.fulfillment }}" == "true" ]; then
+            SERVICES="${SERVICES}fulfillment,"
+          fi
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          echo "📦 Updated Services: $SERVICES"
+
+  # =====================================================
+  # JOB 3: Deploy to EC2/K3s (SSH Remote Execution)
+  # =====================================================
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_API_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "🚀 Triggering K8s rollout restart..."
+            
+            # Restart deployments to pull new images
+            kubectl rollout restart deployment/availability-app 2>/dev/null || true
+            kubectl rollout restart deployment/order-app 2>/dev/null || true
+            kubectl rollout restart deployment/fulfillment-app 2>/dev/null || true
+            
+            # Wait for rollouts
+            kubectl rollout status deployment/availability-app --timeout=120s 2>/dev/null || true
+            kubectl rollout status deployment/order-app --timeout=120s 2>/dev/null || true
+            
+            echo "✅ Deployment complete!"
+            kubectl get pods
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Updated Services:** ${{ needs.build-and-push.outputs.services_updated }}" >> $GITHUB_STEP_SUMMARY
