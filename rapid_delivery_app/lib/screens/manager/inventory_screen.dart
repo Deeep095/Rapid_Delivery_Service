@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/inventory_service.dart';
+import 'warehouse_orders_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   final String warehouseId;
@@ -321,6 +322,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long, color: Colors.white),
+            onPressed:
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder:
+                        (ctx) => WarehouseOrdersScreen(
+                          warehouseId: widget.warehouseId,
+                          warehouseName: widget.warehouseName,
+                        ),
+                  ),
+                ),
+            tooltip: 'View Orders',
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort, color: Colors.white),
             onSelected: _sortInventory,

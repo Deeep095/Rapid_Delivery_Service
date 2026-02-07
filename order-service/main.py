@@ -212,30 +212,35 @@ def health_check():
 def place_order(order: OrderRequest):
     order_id = str(uuid.uuid4())
     
+    # Extract primary warehouse_id from the first item (all items should be from same warehouse in a single order)
+    primary_warehouse_id = order.items[0].warehouse_id if order.items else None
+    
     message_body = {
         "order_id": order_id,
         "customer_id": order.customer_id,
+        "warehouse_id": primary_warehouse_id,
         "items": [item.dict() for item in order.items]
     }
 
     try:
-        # 1. Store order in database
+        # 1. Store order in database with warehouse_id for seller filtering
         conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
             cursor.execute("""
-                INSERT INTO orders (order_id, customer_id, status, items, created_at) 
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO orders (order_id, customer_id, warehouse_id, status, items, created_at) 
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 order_id,
                 order.customer_id,
+                primary_warehouse_id,
                 'PENDING',
                 json.dumps(message_body['items']),
                 datetime.utcnow()
             ))
             conn.commit()
-            print(f"✅ Order {order_id} saved to database")
+            print(f"✅ Order {order_id} saved to database (warehouse: {primary_warehouse_id})")
         except Exception as db_error:
             conn.rollback()
             print(f"⚠️ DB Error (order may not be saved): {db_error}")
@@ -304,6 +309,52 @@ def get_order_history(customer_id: str):
         print(f"❌ Order History Error: {e}")
         # Return empty list instead of error for better UX
         return []
+
+
+# =====================================================
+# SELLER/WAREHOUSE ORDER ENDPOINTS
+# =====================================================
+
+@app.get("/warehouse/{warehouse_id}/orders")
+def get_warehouse_orders(warehouse_id: str):
+    """Get orders for a specific warehouse (for sellers/managers)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT order_id, customer_id, warehouse_id, status, items, created_at 
+            FROM orders 
+            WHERE warehouse_id = %s 
+            ORDER BY created_at DESC
+            LIMIT 100
+        """, (warehouse_id,))
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        orders = []
+        for row in rows:
+            # Parse items JSON from database
+            items_data = row[4] if isinstance(row[4], list) else json.loads(row[4])
+            
+            orders.append({
+                "order_id": row[0],
+                "customer_id": row[1],
+                "warehouse_id": row[2],
+                "status": row[3],
+                "items": items_data,
+                "created_at": row[5].isoformat() if row[5] else None
+            })
+        
+        return {"orders": orders, "count": len(orders), "warehouse_id": warehouse_id}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Warehouse Orders Error: {e}")
+        return {"orders": [], "count": 0, "warehouse_id": warehouse_id}
 
 
 # =====================================================

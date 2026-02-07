@@ -36,6 +36,8 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
   String _warehouseInfo = "Select a location to start";
   String _activeWarehouseId = "";
   bool _isLoading = true;
+  bool _deliveryAvailable =
+      false; // Track if delivery is available at current location
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -66,11 +68,18 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
   void _filterByCategory(String categoryId) {
     setState(() {
       _selectedCategoryId = categoryId;
+
+      // Start with products that have stock at current warehouse
+      List<Product> baseProducts =
+          _deliveryAvailable
+              ? _products.where((p) => (_stockLevels[p.id] ?? 0) > 0).toList()
+              : [];
+
       if (categoryId == 'all') {
-        _filteredProducts = _products;
+        _filteredProducts = baseProducts;
       } else {
         _filteredProducts =
-            _products.where((p) => p.categoryId == categoryId).toList();
+            baseProducts.where((p) => p.categoryId == categoryId).toList();
       }
       // Also apply search filter if active
       if (_searchController.text.isNotEmpty) {
@@ -81,10 +90,16 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
 
   void _runProductSearch(String query) {
     setState(() {
+      // Start with products that have stock at current warehouse
+      List<Product> inStock =
+          _deliveryAvailable
+              ? _products.where((p) => (_stockLevels[p.id] ?? 0) > 0).toList()
+              : [];
+
       List<Product> base =
           _selectedCategoryId == 'all'
-              ? _products
-              : _products
+              ? inStock
+              : inStock
                   .where((p) => p.categoryId == _selectedCategoryId)
                   .toList();
 
@@ -107,9 +122,12 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
     setState(() {
       _isLoading = true;
       _warehouseInfo = "Checking availability...";
+      _deliveryAvailable = false;
+      _stockLevels.clear();
+      _cart.clear(); // Clear cart when location changes
     });
 
-    // Probe first item
+    // Probe first item to check if any warehouse is nearby
     var probe = await ApiService.checkStock(
       "apple",
       _currentLocation!.lat,
@@ -120,27 +138,40 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
       double dist = probe['distance_km'];
       setState(() {
         _activeWarehouseId = probe['warehouse_id'];
+        _deliveryAvailable = true;
         _warehouseInfo =
             "⚡ Delivery from $_activeWarehouseId (${dist.toStringAsFixed(1)} km)";
       });
 
-      // Fetch stock for all products
+      // Fetch stock for all products from the nearest warehouse
       for (var p in _products) {
         final result = await ApiService.checkStock(
           p.id,
           _currentLocation!.lat,
           _currentLocation!.lon,
         );
-        if (result['available'] == true) {
+        if (result['available'] == true &&
+            result['warehouse_id'] == _activeWarehouseId) {
           _stockLevels[p.id] = result['quantity'] ?? 0;
         } else {
           _stockLevels[p.id] = 0;
         }
       }
+
+      // Filter products to only show those with stock > 0 at this warehouse
+      setState(() {
+        _filteredProducts =
+            _products.where((p) {
+              return (_stockLevels[p.id] ?? 0) > 0;
+            }).toList();
+      });
     } else {
       setState(() {
         _activeWarehouseId = "";
-        _warehouseInfo = "🚫 No delivery available here";
+        _deliveryAvailable = false;
+        _warehouseInfo = "🚫 No delivery available in your area";
+        _filteredProducts = []; // Hide all products when no delivery
+        _stockLevels.clear();
       });
     }
 
@@ -190,6 +221,19 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
   }
 
   void _openCart() {
+    // Block cart access when no delivery is available
+    if (!_deliveryAvailable || _activeWarehouseId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "No delivery available at your location. Please change your address.",
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (_cart.isEmpty) {
       ScaffoldMessenger.of(
         context,

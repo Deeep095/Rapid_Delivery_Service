@@ -1,0 +1,18 @@
+# GitGuardian Configuration
+# These are intentional demo/test credentials for local development only
+# NOT real production credentials
+
+# Paths to ignore (demo/test data only)
+paths-ignore:
+  - rapid_delivery_app/lib/services/auth_service.dart  # Demo warehouse manager credentials
+  - seed_local.py             # Local test seed data
+  - seed_aws.py               # AWS demo seed (uses placeholder password)
+  - seed.py                   # Test seed data
+  - local/**                  # All local development files
+  - docker-compose*.yaml      # Local Docker configs with default passwords
+
+# Match patterns to ignore
+matches-ignore:
+  # Demo passwords for local testing (not real credentials)
+  - name: "Demo test passwords"
+    match: "password123|jaipur123|lnmiit123|malviya123|mumbai123|delhi123|Admin@123"

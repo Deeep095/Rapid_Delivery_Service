@@ -314,98 +314,112 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                const Spacer(flex: 1),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 32),
 
-                // Logo & Title
-                const Icon(Icons.rocket_launch, size: 80, color: Colors.white),
-                const SizedBox(height: 16),
-                const Text(
-                  'Rapid Delivery',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Groceries delivered in 10 minutes',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withValues(alpha: 0.8),
-                  ),
-                ),
+                        // Logo & Title
+                        const Icon(
+                          Icons.rocket_launch,
+                          size: 80,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Rapid Delivery',
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Groceries delivered in 10 minutes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white.withValues(alpha: 0.8),
+                          ),
+                        ),
 
-                const Spacer(flex: 1),
+                        const SizedBox(height: 48),
 
-                // Role Selection
-                const Text(
-                  'Choose your role:',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 24),
+                        // Role Selection
+                        const Text(
+                          'Choose your role:',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
 
-                // Buyer Card
-                _buildRoleCard(
-                  icon: Icons.shopping_cart,
-                  title: 'I\'m a Buyer',
-                  subtitle: 'Browse products & place orders',
-                  color: Colors.blue,
-                  buttons: [
-                    _ActionButton(
-                      label: 'Sign in with Google',
-                      icon: Icons.g_mobiledata,
-                      onTap: _isLoading ? null : _handleGoogleSignIn,
-                      isPrimary: true,
+                        // Buyer Card
+                        _buildRoleCard(
+                          icon: Icons.shopping_cart,
+                          title: 'I\'m a Buyer',
+                          subtitle: 'Browse products & place orders',
+                          color: Colors.blue,
+                          buttons: [
+                            _ActionButton(
+                              label: 'Sign in with Google',
+                              icon: Icons.g_mobiledata,
+                              onTap: _isLoading ? null : _handleGoogleSignIn,
+                              isPrimary: true,
+                            ),
+                            _ActionButton(
+                              label: 'Demo Mode',
+                              icon: Icons.play_arrow,
+                              onTap: _isLoading ? null : _handleDemoLogin,
+                              isPrimary: false,
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Manager Card
+                        _buildRoleCard(
+                          icon: Icons.warehouse,
+                          title: 'I\'m a Warehouse Manager',
+                          subtitle: 'Manage inventory & view orders',
+                          color: Colors.orange,
+                          buttons: [
+                            _ActionButton(
+                              label: 'Manager Login',
+                              icon: Icons.login,
+                              onTap: _showManagerLoginDialog,
+                              isPrimary: true,
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 48),
+
+                        // Footer
+                        Text(
+                          'CAP Theorem Demo • Distributed Systems Project',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                     ),
-                    _ActionButton(
-                      label: 'Demo Mode',
-                      icon: Icons.play_arrow,
-                      onTap: _isLoading ? null : _handleDemoLogin,
-                      isPrimary: false,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-
-                // Manager Card
-                _buildRoleCard(
-                  icon: Icons.warehouse,
-                  title: 'I\'m a Warehouse Manager',
-                  subtitle: 'Manage inventory & view orders',
-                  color: Colors.orange,
-                  buttons: [
-                    _ActionButton(
-                      label: 'Manager Login',
-                      icon: Icons.login,
-                      onTap: _showManagerLoginDialog,
-                      isPrimary: true,
-                    ),
-                  ],
-                ),
-
-                const Spacer(flex: 2),
-
-                // Footer
-                Text(
-                  'CAP Theorem Demo • Distributed Systems Project',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),

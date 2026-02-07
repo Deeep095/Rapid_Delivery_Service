@@ -133,14 +133,27 @@ jobs:
 
   # =====================================================
   # JOB 3: Deploy to EC2/K3s (SSH Remote Execution)
+  # Only runs if EC2_API_HOST secret is configured
   # =====================================================
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: success()
+    # Only deploy if EC2 host is configured
+    if: success() && github.event.repository.full_name == github.repository && vars.DEPLOY_ENABLED == 'true'
 
     steps:
+      - name: Check if deployment secrets exist
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.EC2_API_HOST }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⚠️ EC2_API_HOST secret not set - skipping deployment"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Deploy to EC2 via SSH
+        if: steps.check-secrets.outputs.skip != 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_API_HOST }}
@@ -163,8 +176,21 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Updated Services:** ${{ needs.build-and-push.outputs.services_updated }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check-secrets.outputs.skip }}" == "true" ]; then
+            echo "## ⚠️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "EC2_API_HOST secret not configured." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To enable auto-deploy, add these secrets:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`EC2_API_HOST\`: Your EC2 public IP or DNS" >> $GITHUB_STEP_SUMMARY
+            echo "- \`EC2_SSH_KEY\`: SSH private key for ubuntu user" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "And set repository variable:" >> $GITHUB_STEP_SUMMARY
+            echo "- \`DEPLOY_ENABLED\`: \`true\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Updated Services:** ${{ needs.build-and-push.outputs.services_updated }}" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -250,4 +250,28 @@ class ApiService {
       return {"error": "Connection failed: $e"};
     }
   }
+
+  // 10. Get Warehouse Orders (for Seller/Manager to see orders for their warehouse)
+  static Future<Map<String, dynamic>> getWarehouseOrders(
+    String warehouseId,
+  ) async {
+    final url = Uri.parse("$orderBaseUrl/warehouse/$warehouseId/orders");
+
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        return {
+          "orders": [],
+          "count": 0,
+          "error": "Status ${response.statusCode}",
+        };
+      }
+    } catch (e) {
+      print("Warehouse Orders Error: $e");
+      return {"orders": [], "count": 0, "error": e.toString()};
+    }
+  }
 }

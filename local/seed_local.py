@@ -108,18 +108,21 @@ def seed_postgres():
             )
         """)
         
-        # Drop and recreate orders table with correct schema
+        # Drop and recreate orders table with correct schema (includes warehouse_id for seller filtering)
         cur.execute("DROP TABLE IF EXISTS orders CASCADE")
         cur.execute("""
             CREATE TABLE orders (
                 order_id VARCHAR(50) PRIMARY KEY,
                 customer_id VARCHAR(100) NOT NULL,
+                warehouse_id VARCHAR(100),
                 status VARCHAR(50) DEFAULT 'PENDING',
                 items JSONB NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("   ✅ Created orders table")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_warehouse ON orders(warehouse_id)")
+        print("   ✅ Created orders table with warehouse_id column")
         
         # Insert items
         for item_id, name, price in ITEMS:

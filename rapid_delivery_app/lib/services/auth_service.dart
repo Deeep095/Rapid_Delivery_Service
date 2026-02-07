@@ -24,9 +24,12 @@ class AuthService {
   );
 
   // =====================================================
-  // WAREHOUSE MANAGER CREDENTIALS
-  // Each warehouse has a dedicated manager login
+  // DEMO WAREHOUSE MANAGER CREDENTIALS
+  // ⚠️ FOR LOCAL DEVELOPMENT/TESTING ONLY
+  // These are NOT real credentials - intentionally hardcoded
+  // for demo purposes. In production, use proper auth system.
   // =====================================================
+  // gitguardian:ignore - Demo credentials for local testing
   static final Map<String, WarehouseManager> _warehouseManagers = {
     // Jaipur Warehouses
     'manager_jaipur_central': WarehouseManager(
