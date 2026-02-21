@@ -154,6 +154,16 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
     }
   }
 
+  Future<void> _handleLogout() async {
+    await AuthService.signOut();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (ctx) => const RoleSelectionScreen()),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -188,7 +198,7 @@ class _ManagerHomeScreenState extends State<ManagerHomeScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => _handleLogout(),
             tooltip: 'Switch Role',
           ),
         ],

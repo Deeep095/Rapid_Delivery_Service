@@ -194,6 +194,37 @@ class ApiService {
     return [];
   }
 
+  // 7b. Get Warehouse Products (for Buyer flow - fetches products with stock > 0)
+  static Future<List<Product>> getWarehouseProducts(String warehouseId) async {
+    final url = Uri.parse("$availabilityBaseUrl/products/$warehouseId");
+
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> products = data['products'] ?? [];
+
+        return products
+            .map(
+              (p) => Product(
+                id: p['id'] ?? '',
+                name: p['name'] ?? '',
+                unit: p['unit'] ?? '1 unit',
+                imageEmoji: p['imageEmoji'] ?? '📦',
+                price: (p['price'] ?? 100).toDouble(),
+                categoryId: p['categoryId'] ?? 'grocery',
+              ),
+            )
+            .toList();
+      }
+    } catch (e) {
+      print("Get Warehouse Products Error: $e");
+    }
+
+    return [];
+  }
+
   // 8. Update Stock (for Manager flow)
   static Future<Map<String, dynamic>> updateStock({
     required String warehouseId,

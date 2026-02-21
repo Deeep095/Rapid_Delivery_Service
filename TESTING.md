@@ -267,7 +267,103 @@ docker exec postgres psql -U postgres -c "\d orders"
 
 ---
 
-## 6️⃣ FLUTTER APP TESTING
+## 6️⃣ PERFORMANCE BENCHMARKS just reference purposes
+
+### Local Development PC Results (Feb 2026)
+
+**Test Environment:**
+- PC: Intel i7 (8 cores), 16GB RAM, SSD
+- Docker Desktop: 6 containers (postgres, redis, opensearch, availability, order, fulfillment)
+- All services running locally on same machine
+
+#### Sequential Request Throughput
+
+| Endpoint | Requests/sec | Avg Latency | Notes |
+|----------|-------------|-------------|-------|
+| `GET /availability` | **106 req/s** | ~10ms | Redis cache hit |
+| `GET /products/{warehouse}` | **100 req/s** | ~10ms | Redis lookup |
+| `POST /orders` | **17 req/s** | ~57ms | PostgreSQL + OpenSearch write |
+| `GET /orders/{customer}` | **83 req/s** | ~12ms | OpenSearch query |
+
+#### Concurrent User Capacity (Local)
+
+| Concurrent Users | Read Operations | Write Operations |
+|-----------------|-----------------|------------------|
+| 10 | ✅ 100% success | ✅ 100% success |
+| 25 | ✅ ~6.7 req/s total | ✅ Stable |
+| 50 | ✅ Handles well | ⚠️ Some queuing |
+
+**Local Capacity Summary:**
+- **Read-heavy workload:** ~100 concurrent users
+- **Write-heavy workload:** ~15-20 concurrent users placing orders
+- **Mixed typical usage:** ~30-50 concurrent active users
+
+---
+
+### AWS EC2 Performance Estimates
+
+> ⚠️ Estimates based on typical FastAPI + PostgreSQL benchmarks. Actual results depend on network, DB configuration, and workload.
+
+#### Single Instance Performance
+
+| Instance Type | vCPU | RAM | Read Ops/sec | Write Ops/sec | Est. Concurrent Users | Cost/hr |
+|--------------|------|-----|--------------|---------------|----------------------|---------|
+| **t3.micro** | 2 | 1GB | ~80-120 | ~10-15 | 15-25 | $0.0104 |
+| **t3.small** | 2 | 2GB | ~150-250 | ~20-35 | 30-50 | $0.0208 |
+| **t3.medium** | 2 | 4GB | ~250-400 | ~35-60 | 50-80 | $0.0416 |
+| **t3.large** | 2 | 8GB | ~400-600 | ~60-100 | 80-150 | $0.0832 |
+
+#### Horizontal Scaling (Load Balanced)
+
+**t3.micro Instances:**
+| Instances | Read Ops/sec | Write Ops/sec | Est. Concurrent Users | Monthly Cost |
+|-----------|-------------|---------------|----------------------|--------------|
+| 1 | ~100 | ~12 | 20 | ~$7.50 |
+| 2 | ~180 | ~22 | 35 | ~$15 |
+| 3 | ~250 | ~30 | 50 | ~$22.50 |
+| 4 | ~300 | ~35 | 60 | ~$30 |
+| 5 | ~350 | ~40 | 70 | ~$37.50 |
+
+**t3.small Instances:**
+| Instances | Read Ops/sec | Write Ops/sec | Est. Concurrent Users | Monthly Cost |
+|-----------|-------------|---------------|----------------------|--------------|
+| 1 | ~200 | ~25 | 40 | ~$15 |
+| 2 | ~380 | ~45 | 75 | ~$30 |
+| 3 | ~540 | ~65 | 110 | ~$45 |
+| 4 | ~680 | ~80 | 140 | ~$60 |
+| 5 | ~800 | ~95 | 170 | ~$75 |
+
+**t3.large Instances:**
+| Instances | Read Ops/sec | Write Ops/sec | Est. Concurrent Users | Monthly Cost |
+|-----------|-------------|---------------|----------------------|--------------|
+| 1 | ~500 | ~80 | 120 | ~$60 |
+| 2 | ~950 | ~150 | 230 | ~$120 |
+| 3 | ~1350 | ~210 | 340 | ~$180 |
+| 4 | ~1700 | ~260 | 440 | ~$240 |
+| 5 | ~2000 | ~300 | 520 | ~$300 |
+
+#### Scaling Bottlenecks
+
+| Component | Bottleneck Point | Solution |
+|-----------|-----------------|----------|
+| **PostgreSQL** | ~500 writes/sec | RDS Multi-AZ, Read Replicas |
+| **OpenSearch** | ~1000 writes/sec | Managed OpenSearch cluster |
+| **Redis** | ~50,000 ops/sec | ElastiCache cluster |
+| **Network** | ~1 Gbps | Enhanced networking |
+
+#### Recommended Configurations
+
+| Use Case | Instances | Type | Database | Est. Cost/month |
+|----------|-----------|------|----------|-----------------|
+| **Development** | 1 | t3.micro | Local Docker | ~$7 |
+| **Startup MVP** | 2 | t3.small | RDS db.t3.micro | ~$50 |
+| **Small Business** | 3 | t3.small | RDS db.t3.small | ~$100 |
+| **Growing** | 3 | t3.medium | RDS db.t3.medium | ~$200 |
+| **Production** | 5+ | t3.large | RDS + ElastiCache | ~$500+ |
+
+---
+
+## 7️⃣ FLUTTER APP TESTING
 
 ### UI Components to Verify
 

@@ -311,9 +311,7 @@ def get_order_history(customer_id: str):
         return []
 
 
-# =====================================================
 # SELLER/WAREHOUSE ORDER ENDPOINTS
-# =====================================================
 
 @app.get("/warehouse/{warehouse_id}/orders")
 def get_warehouse_orders(warehouse_id: str):
@@ -357,9 +355,7 @@ def get_warehouse_orders(warehouse_id: str):
         return {"orders": [], "count": 0, "warehouse_id": warehouse_id}
 
 
-# =====================================================
 # SNS NOTIFICATION ENDPOINTS
-# =====================================================
 
 class SubscribeRequest(BaseModel):
     warehouse_id: str

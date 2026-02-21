@@ -6,9 +6,7 @@
 
 set -e
 
-echo "=========================================="
 echo "Seeding OpenSearch with Warehouse Data"
-echo "=========================================="
 
 # Create warehouses index with geo_point mapping
 echo "Creating warehouses index..."

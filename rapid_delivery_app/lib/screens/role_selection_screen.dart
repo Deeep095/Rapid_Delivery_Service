@@ -84,6 +84,21 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     _navigateToBuyerHome();
   }
 
+  Future<void> _handleManagerDemoLogin() async {
+    setState(() => _isLoading = true);
+
+    final manager = await AuthService.signInAsDemoManager();
+    setState(() {
+      _userName = manager.name;
+      _userEmail = manager.email;
+      _userRole = 'manager';
+      _warehouseId = manager.warehouseId;
+      _warehouseName = manager.warehouseName;
+      _isLoading = false;
+    });
+    _navigateToManagerDashboard();
+  }
+
   void _navigateToBuyerHome() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -399,6 +414,13 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                               icon: Icons.login,
                               onTap: _showManagerLoginDialog,
                               isPrimary: true,
+                            ),
+                            _ActionButton(
+                              label: 'Demo Mode (LNMIIT)',
+                              icon: Icons.play_arrow,
+                              onTap:
+                                  _isLoading ? null : _handleManagerDemoLogin,
+                              isPrimary: false,
                             ),
                           ],
                         ),

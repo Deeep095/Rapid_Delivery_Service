@@ -53,8 +53,8 @@ class Product {
 
 /// User location model
 class UserLocation {
-  final String name; // e.g. "Home", "Office"
-  final String address; // e.g. "LNMIIT Campus"
+  final String name;
+  final String address; 
   final double lat;
   final double lon;
   final bool isSaved;

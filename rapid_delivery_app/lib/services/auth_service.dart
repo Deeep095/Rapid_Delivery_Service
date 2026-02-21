@@ -185,6 +185,28 @@ class AuthService {
     return demoUser;
   }
 
+  /// Sign in as demo manager (for testing without entering credentials)
+  /// Returns a random warehouse manager for demo purposes
+  static Future<WarehouseManager> signInAsDemoManager({
+    String? warehouseId,
+  }) async {
+    // Default to LNMIIT warehouse for demo (or specified warehouse)
+    final managerId = warehouseId ?? 'manager_lnmiit';
+    final manager =
+        _warehouseManagers[managerId] ?? _warehouseManagers.values.first;
+
+    // Save session
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', manager.name);
+    await prefs.setString('user_email', manager.email);
+    await prefs.setString('user_role', 'manager');
+    await prefs.setString('warehouse_id', manager.warehouseId);
+    await prefs.setString('warehouse_name', manager.warehouseName);
+    await prefs.setBool('is_logged_in', true);
+
+    return manager;
+  }
+
   // =====================================================
   // SESSION MANAGEMENT
   // =====================================================

@@ -4,6 +4,8 @@ import '../../api_service.dart';
 import '../../data_repository.dart';
 import '../../location_sheet.dart';
 import '../../widgets/widgets.dart';
+import '../../services/auth_service.dart';
+import '../role_selection_screen.dart';
 import 'cart_screen.dart';
 import 'order_history_screen.dart';
 
@@ -127,44 +129,60 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
       _cart.clear(); // Clear cart when location changes
     });
 
-    // Probe first item to check if any warehouse is nearby
+    // Probe to find the nearest warehouse
     var probe = await ApiService.checkStock(
       "apple",
       _currentLocation!.lat,
       _currentLocation!.lon,
     );
 
-    if (probe['available'] == true) {
-      double dist = probe['distance_km'];
+    if (probe['available'] == true || probe['warehouse_id'] != null) {
+      double dist = probe['distance_km'] ?? 0;
+      final warehouseId = probe['warehouse_id'];
+
       setState(() {
-        _activeWarehouseId = probe['warehouse_id'];
+        _activeWarehouseId = warehouseId;
         _deliveryAvailable = true;
         _warehouseInfo =
             "⚡ Delivery from $_activeWarehouseId (${dist.toStringAsFixed(1)} km)";
       });
 
-      // Fetch stock for all products from the nearest warehouse
-      for (var p in _products) {
-        final result = await ApiService.checkStock(
-          p.id,
-          _currentLocation!.lat,
-          _currentLocation!.lon,
-        );
-        if (result['available'] == true &&
-            result['warehouse_id'] == _activeWarehouseId) {
-          _stockLevels[p.id] = result['quantity'] ?? 0;
-        } else {
-          _stockLevels[p.id] = 0;
-        }
-      }
+      // Fetch products WITH STOCK directly from the warehouse
+      // This gets real-time inventory from Redis
+      final warehouseProducts = await ApiService.getWarehouseProducts(
+        warehouseId,
+      );
 
-      // Filter products to only show those with stock > 0 at this warehouse
-      setState(() {
-        _filteredProducts =
-            _products.where((p) {
-              return (_stockLevels[p.id] ?? 0) > 0;
-            }).toList();
-      });
+      if (warehouseProducts.isNotEmpty) {
+        // Use warehouse products as the catalog
+        _products = warehouseProducts;
+        _stockLevels.clear();
+
+        // Build stock levels map from the products
+        for (var p in warehouseProducts) {
+          // The API returns products with stock > 0,
+          // but we need to fetch actual stock for cart limits
+          final result = await ApiService.checkStock(
+            p.id,
+            _currentLocation!.lat,
+            _currentLocation!.lon,
+          );
+          if (result['available'] == true) {
+            _stockLevels[p.id] = result['quantity'] ?? 0;
+          }
+        }
+
+        setState(() {
+          _filteredProducts = List.from(_products);
+        });
+      } else {
+        // Fallback: No products at this warehouse
+        setState(() {
+          _products = [];
+          _filteredProducts = [];
+          _warehouseInfo = "📭 No products available at this warehouse";
+        });
+      }
     } else {
       setState(() {
         _activeWarehouseId = "";
@@ -267,6 +285,16 @@ class _BuyerHomeScreenState extends State<BuyerHomeScreen> {
         builder: (ctx) => OrderHistoryScreen(userEmail: widget.userEmail),
       ),
     );
+  }
+
+  Future<void> _handleLogout() async {
+    await AuthService.signOut();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (ctx) => const RoleSelectionScreen()),
+        (route) => false,
+      );
+    }
   }
 
   int get _totalCartItems => _cart.values.fold(0, (sum, qty) => sum + qty);

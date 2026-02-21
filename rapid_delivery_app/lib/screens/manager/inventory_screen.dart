@@ -550,16 +550,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   if (nameController.text.isNotEmpty) {
-                    // Add to local inventory (in real app, would call API)
+                    final productId =
+                        'prod_${DateTime.now().millisecondsSinceEpoch}';
+                    final stock = int.tryParse(stockController.text) ?? 0;
+
+                    // Save to Redis via API
+                    final result = await InventoryService.updateStock(
+                      warehouseId: widget.warehouseId,
+                      productId: productId,
+                      newStock: stock,
+                    );
+
+                    if (result.containsKey('error')) {
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('❌ Failed: ${result['error']}'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
+                    // Add to local inventory for immediate display
                     setState(() {
                       _inventory.add({
-                        'product_id':
-                            'prod_${DateTime.now().millisecondsSinceEpoch}',
+                        'product_id': productId,
                         'name': nameController.text,
                         'category': category,
-                        'stock': int.tryParse(stockController.text) ?? 0,
+                        'stock': stock,
                         'min_stock': 10,
                         'price': int.tryParse(priceController.text) ?? 0,
                       });
@@ -568,7 +589,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     Navigator.pop(ctx);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('✅ Product added successfully'),
+                        content: Text('✅ Product added & saved to Redis!'),
                         backgroundColor: Colors.green,
                       ),
                     );

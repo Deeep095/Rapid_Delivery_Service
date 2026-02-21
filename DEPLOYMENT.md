@@ -1,0 +1,302 @@
+# 🚀 Rapid Delivery Service - Deployment Guide
+
+## 📋 Quick Start
+
+### Local Development (Docker)
+```powershell
+cd local
+docker-compose -f docker-compose-local.yaml up -d --build
+python seed_local.py
+cd ../rapid_delivery_app
+flutter run -d chrome --web-browser-flag "--disable-web-security"
+```
+
+### AWS Production
+```powershell
+cd terraform-files
+terraform init && terraform apply --auto-approve
+./generate_flutter_config.ps1
+python ../seed_aws.py
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      FLUTTER APP (Web/Mobile)                    │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ HTTP
+                               ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                        NGINX (Port 80)                           │
+│         /availability/* → :8000    /order/* → :8001              │
+└──────────────────────────────────────────────────────────────────┘
+        │                        │                       │
+        ▼                        ▼                       ▼
+┌───────────────┐       ┌───────────────┐       ┌───────────────┐
+│ Availability  │       │    Order      │       │  Fulfillment  │
+│   Service     │       │   Service     │       │    Worker     │
+│   :8000       │       │   :8001       │       │  (background) │
+└───────┬───────┘       └───────┬───────┘       └───────┬───────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌───────────────┐       ┌───────────────┐       ┌───────────────┐
+│  OpenSearch   │       │   PostgreSQL  │       │     Redis     │
+│ (Geo-location)│       │   (Orders)    │       │  (Inventory)  │
+└───────────────┘       └───────────────┘       └───────────────┘
+```
+
+---
+
+## 🔧 Service Details
+
+| Service | Port | Purpose | Database |
+|---------|------|---------|----------|
+| **Availability** | 8000 | Stock check, warehouse search, inventory CRUD | Redis + OpenSearch |
+| **Order** | 8001 | Place orders, order history | PostgreSQL |
+| **Fulfillment** | - | Background order processing, stock updates | PostgreSQL + Redis |
+
+### How They Work Together
+
+1. **Buyer searches products** → Availability service queries OpenSearch for nearest warehouse, Redis for stock
+2. **Buyer places order** → Order service saves to PostgreSQL with status `PENDING`
+3. **Worker processes order** → Fulfillment worker polls DB, updates status to `COMPLETED`, decrements Redis stock
+4. **Manager updates inventory** → Availability service updates Redis directly
+
+---
+
+## 📦 Local Setup (Docker)
+
+### Prerequisites
+- Docker Desktop running
+- Python 3.9+
+- Flutter SDK
+
+### Step 1: Start Services
+```powershell
+cd d:\Rapid_Delivery_Service\local
+docker-compose -f docker-compose-local.yaml up -d --build
+```
+
+### Step 2: Seed Data
+```powershell
+python seed_local.py
+```
+
+### Step 3: Run Flutter
+```powershell
+cd rapid_delivery_app
+flutter run -d chrome --web-browser-flag "--disable-web-security"
+```
+
+### Verify Services
+```powershell
+curl http://localhost:8000/                    # Availability health
+curl http://localhost:8001/                    # Order health
+curl http://localhost:8000/warehouses          # List warehouses
+curl "http://localhost:8000/availability?item_id=apple&lat=26.9&lon=75.8"
+```
+
+---
+
+## ☁️ AWS Deployment
+
+### Prerequisites
+- AWS CLI configured (`aws configure`)
+- Terraform installed
+- SSH key: `ssh-keygen -t rsa -b 4096 -f terraform-files/k3s-key`
+
+### Step 1: Deploy Infrastructure
+```powershell
+cd terraform-files
+terraform init
+terraform apply --auto-approve
+```
+
+**Creates (FREE TIER eligible):**
+- 2 × EC2 t3.micro (API + Worker)
+- RDS PostgreSQL t3.micro
+- ElastiCache Redis t2.micro
+- OpenSearch t3.small
+- SQS Queue
+
+### Step 2: Update Flutter Config
+```powershell
+./generate_flutter_config.ps1
+```
+
+### Step 3: Seed AWS
+```powershell
+python ../seed_aws.py
+```
+
+### Step 4: Verify
+```powershell
+$API_IP = terraform output -raw api_server_ip
+curl http://${API_IP}:30001/
+curl http://${API_IP}:30002/
+```
+
+---
+
+## 🔄 Update Workflow
+
+### Update Service Code
+```powershell
+# 1. Edit code
+code availability-service/main.py
+
+# 2. Rebuild local
+cd local
+docker-compose -f docker-compose-local.yaml build availability-service
+docker-compose -f docker-compose-local.yaml up -d availability-service
+
+# --- OR for AWS ---
+
+# 2. Build and push to ECR
+docker build -t availability:v2 ../availability-service
+aws ecr get-login-password | docker login --username AWS --password-stdin <ECR_URL>
+docker tag availability:v2 <ECR_URL>/availability:latest
+docker push <ECR_URL>/availability:latest
+
+# 3. Restart on EC2
+ssh -i k3s-key ubuntu@<API_IP> "kubectl rollout restart deployment/availability-app"
+```
+
+### GitHub Actions CI/CD
+Push to `main` branch triggers automatic build and deploy.
+
+**Required Secrets:**
+- `AWS_ACCOUNT_ID`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+- `EC2_API_HOST`, `EC2_SSH_KEY`
+
+**Required Variables:**
+- `AWS_REGION` (e.g., `us-east-1`)
+- `DEPLOY_ENABLED` = `true`
+
+---
+
+## 🐛 Troubleshooting
+
+### Container Issues
+```powershell
+docker logs rapid_availability    # Check logs
+docker logs rapid_order
+docker logs rapid_fulfillment
+docker-compose -f docker-compose-local.yaml restart <service>
+```
+
+### Database Reset
+```powershell
+docker-compose -f docker-compose-local.yaml down -v  # Delete volumes
+docker-compose -f docker-compose-local.yaml up -d
+python seed_local.py
+```
+
+### Flutter CORS Issues
+Always run with:
+```powershell
+flutter run -d chrome --web-browser-flag "--disable-web-security"
+```
+
+### EC2 Pods Not Running
+```bash
+ssh -i k3s-key ubuntu@<IP>
+kubectl get pods
+kubectl logs -l app=availability
+sudo tail -f /var/log/cloud-init-output.log
+```
+
+---
+
+## 💰 AWS Costs
+
+### Free Tier (12 months)
+| Resource | Free | Cost |
+|----------|------|------|
+| 2× EC2 t3.micro | 750 hrs/mo each | $0 |
+| RDS t3.micro | 750 hrs/mo | $0 |
+| ElastiCache t2.micro | 750 hrs/mo | $0 |
+| OpenSearch t3.small | 750 hrs/mo | $0 |
+| **Total** | | **~$1/mo** |
+
+### After Free Tier: ~$67/month
+
+### Cleanup
+```powershell
+cd terraform-files
+terraform destroy --auto-approve
+```
+
+---
+
+## 📊 Testing & Validation
+
+### API Tests
+```powershell
+# Check availability
+curl "http://localhost:8000/availability?item_id=apple&lat=26.9&lon=75.8"
+
+# Place order
+curl -X POST http://localhost:8001/orders `
+  -H "Content-Type: application/json" `
+  -d '{"customer_id":"test","items":[{"item_id":"apple","warehouse_id":"wh_lnmiit","quantity":2}]}'
+
+# Check order history
+curl http://localhost:8001/orders/test
+```
+
+### Load Testing
+```powershell
+# Install hey (HTTP load generator)
+# Run 100 requests, 10 concurrent
+hey -n 100 -c 10 "http://localhost:8000/availability?item_id=apple&lat=26.9&lon=75.8"
+```
+
+---
+
+## 🎯 Feature Checklist
+
+### ✅ Implemented
+- [x] Product catalog with categories
+- [x] Location-based warehouse selection
+- [x] Real-time stock checking
+- [x] Cart management & checkout
+- [x] Order placement & history
+- [x] Manager inventory CRUD
+- [x] Role-based UI (Buyer/Manager)
+- [x] Demo mode for both roles
+
+### 🔜 Roadmap
+- [ ] Push notifications
+- [ ] Payment gateway
+- [ ] Live order tracking
+- [ ] Multiple addresses
+- [ ] Promo codes
+
+---
+
+## 📝 Quick Reference
+
+```powershell
+# Local Docker
+cd local && docker-compose -f docker-compose-local.yaml up -d --build
+docker-compose -f docker-compose-local.yaml logs -f
+docker-compose -f docker-compose-local.yaml down
+
+# Flutter
+flutter run -d chrome --web-browser-flag "--disable-web-security"
+
+# SSH to AWS
+ssh -i terraform-files/k3s-key ubuntu@<IP>
+kubectl get pods -A
+kubectl logs -l app=availability
+
+# Terraform
+terraform plan
+terraform apply --auto-approve
+terraform output
+terraform destroy --auto-approve
+```

@@ -247,7 +247,7 @@ class _CartScreenState extends State<CartScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            'Free delivery on orders above ₹199',
+                            'Free delivery on orders above ₹499',
                             style: TextStyle(
                               color: Colors.green[600],
                               fontSize: 12,

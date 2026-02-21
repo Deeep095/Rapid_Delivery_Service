@@ -116,9 +116,7 @@ def check_availability(
     return {"available": False, "message": "No stock or no delivery in your area"}
 
 
-# =====================================================
 # INVENTORY MANAGEMENT ENDPOINTS (for Manager flow)
-# =====================================================
 
 @app.get("/warehouses")
 def get_warehouses():
@@ -175,6 +173,40 @@ def get_warehouse_inventory(warehouse_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to fetch inventory: {str(e)}")
 
 
+@app.get("/products/{warehouse_id}")
+def get_warehouse_products(warehouse_id: str):
+    """Get products with stock > 0 for a warehouse - used by buyer app"""
+    if not r:
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+    
+    try:
+        pattern = f"{warehouse_id}:*"
+        keys = list(r.scan_iter(pattern))
+        
+        products = []
+        for key in keys:
+            item_id = key.split(':')[1] if ':' in key else key
+            qty = r.get(key)
+            stock = int(qty) if qty else 0
+            
+            if stock > 0:  # Only include products with stock
+                products.append({
+                    "id": item_id,
+                    "name": _get_product_name(item_id),
+                    "category": _get_product_category(item_id),
+                    "categoryId": _get_category_id(item_id),
+                    "stock": stock,
+                    "price": _get_product_price(item_id),
+                    "unit": "1 unit",
+                    "imageEmoji": _get_product_emoji(item_id),
+                })
+        
+        return {"products": products, "warehouse_id": warehouse_id, "count": len(products)}
+    except Exception as e:
+        print(f"Error fetching products: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch products: {str(e)}")
+
+
 @app.put("/inventory/{warehouse_id}/{product_id}")
 def update_stock(warehouse_id: str, product_id: str, data: StockUpdateRequest):
     """Update stock for a specific product in a warehouse - persists to Redis"""
@@ -207,9 +239,7 @@ def update_stock(warehouse_id: str, product_id: str, data: StockUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Failed to update stock: {str(e)}")
 
 
-# =====================================================
 # HELPER FUNCTIONS
-# =====================================================
 
 # Product catalog (matches Flutter models.dart)
 PRODUCT_CATALOG = {
@@ -243,3 +273,31 @@ def _get_product_category(product_id: str) -> str:
 
 def _get_product_price(product_id: str) -> int:
     return PRODUCT_CATALOG.get(product_id, {}).get('price', 100)
+
+def _get_category_id(product_id: str) -> str:
+    """Map category name to category ID (matches Flutter categories)"""
+    category = _get_product_category(product_id).lower()
+    category_map = {
+        'fruits': 'fruits',
+        'vegetables': 'fruits',  # Group veggies with fruits
+        'dairy': 'dairy',
+        'snacks': 'snacks',
+        'beverages': 'beverages',
+        'bakery': 'bakery',
+        'grains': 'grocery',
+        'meat': 'frozen',
+        'general': 'grocery',
+    }
+    return category_map.get(category, 'grocery')
+
+def _get_product_emoji(product_id: str) -> str:
+    """Get emoji for product display"""
+    emoji_map = {
+        'apple': '🍎', 'banana': '🍌', 'tomato': '🍅', 'potato': '🥔', 'onion': '🧅',
+        'milk': '🥛', 'cheese': '🧀', 'eggs': '🥚', 'butter': '🧈',
+        'bread': '🍞', 'chips': '🍿', 'chocolate': '🍫',
+        'coke': '🥤', 'juice': '🧃', 'coffee': '☕', 'tea': '🍵',
+        'rice': '🍚', 'pasta': '🍝',
+        'chicken': '🍗', 'fish': '🐟',
+    }
+    return emoji_map.get(product_id, '📦')
